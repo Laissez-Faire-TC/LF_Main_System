@@ -54,6 +54,7 @@ class ExpeditionToken
 
     /**
      * 有効期限内のトークンを持つ遠征一覧を取得（会員ホーム表示用）
+     * 申込開始日時(application_start)が未到来のものは除外する
      */
     public static function getActiveExpeditionsWithTokens(): array
     {
@@ -63,6 +64,7 @@ class ExpeditionToken
              JOIN expeditions e ON e.id = et.expedition_id
              WHERE (et.expires_at IS NULL OR et.expires_at > NOW())
                AND (e.deadline IS NULL OR e.deadline >= CURDATE())
+               AND (e.application_start IS NULL OR e.application_start <= NOW())
              ORDER BY e.start_date ASC",
             []
         );
