@@ -74,6 +74,124 @@ class MerchandiseOrder
     }
 
     /**
+     * カート内容から明細配列と合計金額を構築
+     * @return array{items: array, total: int}
+     */
+    private static function buildItemsFromCart(array $cart): array
+    {
+        $db    = Database::getInstance();
+        $items = [];
+        $total = 0;
+        foreach ($cart as $line) {
+            $mid = (int)($line['merchandise_id'] ?? 0);
+            $qty = max(1, (int)($line['quantity'] ?? 1));
+            if ($mid <= 0 || $qty <= 0) continue;
+
+            $merch = $db->fetch(
+                "SELECT id, name, price FROM merchandise WHERE id = ? AND is_active = 1",
+                [$mid]
+            );
+            if (!$merch) {
+                throw new Exception('商品が見つかりません');
+            }
+
+            $colorName = null;
+            $colorId   = null;
+            if (!empty($line['color_id'])) {
+                $color = $db->fetch(
+                    "SELECT id, color_name FROM merchandise_colors WHERE id = ? AND merchandise_id = ?",
+                    [(int)$line['color_id'], $mid]
+                );
+                if ($color) {
+                    $colorId   = (int)$color['id'];
+                    $colorName = $color['color_name'];
+                }
+            }
+
+            $sizeName = null;
+            $sizeId   = null;
+            if (!empty($line['size_id'])) {
+                $size = $db->fetch(
+                    "SELECT id, size_name FROM merchandise_sizes WHERE id = ? AND merchandise_id = ?",
+                    [(int)$line['size_id'], $mid]
+                );
+                if ($size) {
+                    $sizeId   = (int)$size['id'];
+                    $sizeName = $size['size_name'];
+                }
+            }
+
+            $unit     = (int)$merch['price'];
+            $subtotal = $unit * $qty;
+            $total   += $subtotal;
+
+            $items[] = [
+                'merchandise_id'   => $mid,
+                'merchandise_name' => $merch['name'],
+                'color_id'         => $colorId,
+                'color_name'       => $colorName,
+                'size_id'          => $sizeId,
+                'size_name'        => $sizeName,
+                'quantity'         => $qty,
+                'unit_price'       => $unit,
+                'subtotal'         => $subtotal,
+            ];
+        }
+
+        if (empty($items)) {
+            throw new Exception('カートが空です');
+        }
+
+        return ['items' => $items, 'total' => $total];
+    }
+
+    /**
+     * 同一購入者の未払い注文を返す（あれば）
+     * 会員: member_id 一致／暫定: pending_student_id 一致 かつ member_id NULL
+     */
+    private static function findExistingUnpaidOrder(array $buyer): ?array
+    {
+        $db = Database::getInstance();
+        if (!empty($buyer['member_id'])) {
+            return $db->fetch(
+                "SELECT id FROM merchandise_orders
+                 WHERE member_id = ? AND payment_status = 'unpaid'
+                 ORDER BY created_at DESC LIMIT 1",
+                [(int)$buyer['member_id']]
+            );
+        }
+        if (!empty($buyer['pending_student_id'])) {
+            return $db->fetch(
+                "SELECT id FROM merchandise_orders
+                 WHERE pending_student_id = ?
+                   AND member_id IS NULL
+                   AND payment_status = 'unpaid'
+                 ORDER BY created_at DESC LIMIT 1",
+                [trim($buyer['pending_student_id'])]
+            );
+        }
+        return null;
+    }
+
+    /**
+     * 注文を作成または既存の未払い注文を上書き
+     * 同一購入者の未払い注文があれば内容を完全上書きし、なければ新規作成する。
+     * 戻り値の 'was_updated' は true=更新, false=新規。
+     */
+    public static function createOrUpdate(array $cart, array $buyer): ?array
+    {
+        $existing = self::findExistingUnpaidOrder($buyer);
+        if ($existing) {
+            $order = self::update((int)$existing['id'], $cart, $buyer);
+            if ($order) $order['was_updated'] = true;
+            return $order;
+        }
+        $order = self::create($cart, $buyer);
+        if ($order) $order['was_updated'] = false;
+        return $order;
+    }
+
+    /**
      * 注文を作成（明細含む）
      * cart: [{merchandise_id, color_id, size_id, quantity}, ...]
      * buyer: {name, kana, contact, member_id, notes}
@@ -84,68 +202,9 @@ class MerchandiseOrder
         $db->beginTransaction();
 
         try {
-            // 各商品の現在価格・色名・サイズ名を取得しつつ合計を計算
-            $items = [];
-            $total = 0;
-            foreach ($cart as $line) {
-                $mid = (int)($line['merchandise_id'] ?? 0);
-                $qty = max(1, (int)($line['quantity'] ?? 1));
-                if ($mid <= 0 || $qty <= 0) continue;
-
-                $merch = $db->fetch(
-                    "SELECT id, name, price FROM merchandise WHERE id = ? AND is_active = 1",
-                    [$mid]
-                );
-                if (!$merch) {
-                    throw new Exception('商品が見つかりません');
-                }
-
-                $colorName = null;
-                $colorId   = null;
-                if (!empty($line['color_id'])) {
-                    $color = $db->fetch(
-                        "SELECT id, color_name FROM merchandise_colors WHERE id = ? AND merchandise_id = ?",
-                        [(int)$line['color_id'], $mid]
-                    );
-                    if ($color) {
-                        $colorId   = (int)$color['id'];
-                        $colorName = $color['color_name'];
-                    }
-                }
-
-                $sizeName = null;
-                $sizeId   = null;
-                if (!empty($line['size_id'])) {
-                    $size = $db->fetch(
-                        "SELECT id, size_name FROM merchandise_sizes WHERE id = ? AND merchandise_id = ?",
-                        [(int)$line['size_id'], $mid]
-                    );
-                    if ($size) {
-                        $sizeId   = (int)$size['id'];
-                        $sizeName = $size['size_name'];
-                    }
-                }
-
-                $unit     = (int)$merch['price'];
-                $subtotal = $unit * $qty;
-                $total   += $subtotal;
-
-                $items[] = [
-                    'merchandise_id'   => $mid,
-                    'merchandise_name' => $merch['name'],
-                    'color_id'         => $colorId,
-                    'color_name'       => $colorName,
-                    'size_id'          => $sizeId,
-                    'size_name'        => $sizeName,
-                    'quantity'         => $qty,
-                    'unit_price'       => $unit,
-                    'subtotal'         => $subtotal,
-                ];
-            }
-
-            if (empty($items)) {
-                throw new Exception('カートが空です');
-            }
+            $built = self::buildItemsFromCart($cart);
+            $items = $built['items'];
+            $total = $built['total'];
 
             $orderId = $db->insert(
                 "INSERT INTO merchandise_orders
@@ -194,6 +253,90 @@ class MerchandiseOrder
     }
 
     /**
+     * 既存の未払い注文を完全上書き
+     * 明細は全削除して再登録、ヘッダ（合計・購入者情報・備考）も最新値に更新する。
+     */
+    public static function update(int $orderId, array $cart, array $buyer): ?array
+    {
+        $db = Database::getInstance();
+        $db->beginTransaction();
+
+        try {
+            $current = $db->fetch(
+                "SELECT id, payment_status FROM merchandise_orders WHERE id = ?",
+                [$orderId]
+            );
+            if (!$current) {
+                throw new Exception('注文が見つかりません');
+            }
+            if ($current['payment_status'] !== 'unpaid') {
+                throw new Exception('支払い済み・キャンセル済みの注文は変更できません');
+            }
+
+            $built = self::buildItemsFromCart($cart);
+            $items = $built['items'];
+            $total = $built['total'];
+
+            $db->execute(
+                "UPDATE merchandise_orders SET
+                    member_id            = ?,
+                    pending_student_id   = ?,
+                    buyer_name           = ?,
+                    buyer_kana           = ?,
+                    pending_line_name    = ?,
+                    pending_phone        = ?,
+                    buyer_contact        = ?,
+                    total_amount         = ?,
+                    notes                = ?,
+                    payment_submitted    = 0,
+                    payment_submitted_at = NULL
+                 WHERE id = ?",
+                [
+                    !empty($buyer['member_id']) ? (int)$buyer['member_id'] : null,
+                    !empty($buyer['pending_student_id']) ? trim($buyer['pending_student_id']) : null,
+                    trim($buyer['name'] ?? ''),
+                    trim($buyer['kana']               ?? '') ?: null,
+                    trim($buyer['pending_line_name']  ?? '') ?: null,
+                    trim($buyer['pending_phone']      ?? '') ?: null,
+                    trim($buyer['contact']            ?? '') ?: null,
+                    $total,
+                    trim($buyer['notes']              ?? '') ?: null,
+                    $orderId,
+                ]
+            );
+
+            $db->execute("DELETE FROM merchandise_order_items WHERE order_id = ?", [$orderId]);
+
+            foreach ($items as $it) {
+                $db->insert(
+                    "INSERT INTO merchandise_order_items
+                     (order_id, merchandise_id, color_id, size_id, color_name, size_name, merchandise_name, quantity, unit_price, subtotal)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        $orderId,
+                        $it['merchandise_id'],
+                        $it['color_id'],
+                        $it['size_id'],
+                        $it['color_name'],
+                        $it['size_name'],
+                        $it['merchandise_name'],
+                        $it['quantity'],
+                        $it['unit_price'],
+                        $it['subtotal'],
+                    ]
+                );
+            }
+
+            $db->commit();
+            return self::findById($orderId);
+
+        } catch (Exception $e) {
+            $db->rollback();
+            throw $e;
+        }
+    }
+
+    /**
      * 振込確認状態を切り替え（paid <-> unpaid）
      */
     public static function togglePaid(int $id): ?array
@@ -210,6 +353,33 @@ class MerchandiseOrder
             [$newStatus, $paidAt, $id]
         );
         return self::findById($id);
+    }
+
+    /**
+     * 会員による振込完了報告
+     * 注文が指定会員のもので未払いの場合のみ payment_submitted=1 にする。
+     * すでに報告済み・支払い済み・他人の注文の場合は false。
+     */
+    public static function submitPayment(int $orderId, int $memberId): bool
+    {
+        $db  = Database::getInstance();
+        $row = $db->fetch(
+            "SELECT id, member_id, payment_status, payment_submitted
+             FROM merchandise_orders WHERE id = ?",
+            [$orderId]
+        );
+        if (!$row) return false;
+        if ((int)$row['member_id'] !== $memberId) return false;
+        if ($row['payment_status'] !== 'unpaid') return false;
+        if ((int)$row['payment_submitted'] === 1) return false;
+
+        $db->execute(
+            "UPDATE merchandise_orders
+             SET payment_submitted = 1, payment_submitted_at = ?
+             WHERE id = ?",
+            [date('Y-m-d H:i:s'), $orderId]
+        );
+        return true;
     }
 
     public static function updateStatus(int $id, string $status): ?array

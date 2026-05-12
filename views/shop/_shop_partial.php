@@ -145,17 +145,23 @@
 <?php if (($mode ?? '') === 'member' && !empty($myOrders)): ?>
 <h6 class="text-uppercase text-muted fw-bold mb-3 small mt-5">あなたの注文履歴</h6>
 <?php foreach ($myOrders as $o): ?>
+<?php $submitted = !empty($o['payment_submitted']); ?>
 <div class="card mb-2">
     <div class="card-body py-2">
         <div class="d-flex justify-content-between align-items-center">
             <small class="text-muted"><?= htmlspecialchars($o['created_at']) ?></small>
-            <?php if ($o['payment_status'] === 'paid'): ?>
-            <span class="badge bg-success">入金済</span>
-            <?php elseif ($o['payment_status'] === 'cancelled'): ?>
-            <span class="badge bg-secondary">キャンセル</span>
-            <?php else: ?>
-            <span class="badge bg-warning text-dark">未入金</span>
-            <?php endif; ?>
+            <div>
+                <?php if ($o['payment_status'] === 'paid'): ?>
+                <span class="badge bg-success">入金済</span>
+                <?php elseif ($o['payment_status'] === 'cancelled'): ?>
+                <span class="badge bg-secondary">キャンセル</span>
+                <?php else: ?>
+                <span class="badge bg-warning text-dark">未入金</span>
+                <?php if ($submitted): ?>
+                <span class="badge bg-info text-dark ms-1">振込報告済</span>
+                <?php endif; ?>
+                <?php endif; ?>
+            </div>
         </div>
         <ul class="mt-1 mb-1 small">
             <?php foreach ($o['items'] as $it): ?>
@@ -167,7 +173,20 @@
             </li>
             <?php endforeach; ?>
         </ul>
-        <div class="text-end small text-muted">合計 ¥<?= number_format((int)$o['total_amount']) ?></div>
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="small text-muted">
+                合計 ¥<?= number_format((int)$o['total_amount']) ?>
+                <?php if ($submitted && !empty($o['payment_submitted_at'])): ?>
+                <span class="ms-2">（<?= htmlspecialchars(substr($o['payment_submitted_at'], 0, 16)) ?> 報告済）</span>
+                <?php endif; ?>
+            </div>
+            <?php if ($o['payment_status'] === 'unpaid' && !$submitted): ?>
+            <button type="button" class="btn btn-sm btn-outline-primary submit-payment-btn"
+                    data-order-id="<?= (int)$o['id'] ?>">
+                <i class="bi bi-send-check"></i> 振込完了を報告
+            </button>
+            <?php endif; ?>
+        </div>
     </div>
 </div>
 <?php endforeach; ?>
@@ -192,16 +211,39 @@
                 </div>
                 <?php endif; ?>
 
+                <?php
+                    // 未払いの既存注文があるかどうか（会員モードのみ事前判定可能）
+                    $hasUnpaid = false;
+                    if (($mode ?? '') === 'member' && !empty($myOrders)) {
+                        foreach ($myOrders as $__o) {
+                            if (($__o['payment_status'] ?? '') === 'unpaid') { $hasUnpaid = true; break; }
+                        }
+                    }
+                ?>
+                <?php if ($hasUnpaid): ?>
+                <div class="alert alert-warning small mb-3">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    現在<strong>未入金の注文</strong>があるため、確定すると<strong>そちらの内容が今回のカート内容に上書き</strong>されます。<br>
+                    （新規注文ではなく既存注文の変更として扱われます）
+                </div>
+                <?php endif; ?>
+
                 <?php if (($mode ?? '') === 'pending'): ?>
                 <div class="alert alert-warning small mb-3">
                     <i class="bi bi-info-circle"></i>
                     DBに学籍番号がまだ登録されていない方向けの購入フォームです。<br>
-                    入力された学籍番号で、後日会員登録された際に自動で紐付けられます。
+                    入力された学籍番号で、後日会員登録された際に自動で紐付けられます。<br>
+                    同じ学籍番号で未入金の注文が既にある場合は、内容が上書きされます。
                 </div>
                 <div class="mb-2">
                     <label class="form-label">学籍番号 <span class="text-danger">*</span></label>
-                    <input type="text" class="form-control" id="pendingStudentId" placeholder="例: 1Y25F158-5">
-                    <div class="form-text small">半角・大文字で入力（自動変換されます）</div>
+                    <input type="text" class="form-control" id="pendingStudentId"
+                           placeholder="例: 1Y25F158-5"
+                           inputmode="latin"
+                           autocapitalize="characters"
+                           autocomplete="off"
+                           pattern="[A-Z0-9\-]+">
+                    <div class="form-text small">半角英数字・ハイフンのみ入力可（自動変換されます）</div>
                 </div>
                 <div class="mb-2">
                     <label class="form-label">氏名 <span class="text-danger">*</span></label>
@@ -242,8 +284,8 @@
         <div class="modal-content">
             <div class="modal-body text-center py-4">
                 <i class="bi bi-check-circle text-success" style="font-size: 3rem;"></i>
-                <h5 class="mt-2">ご注文を承りました</h5>
-                <p class="text-muted small mb-3">担当者から支払い方法・お渡し方法のご案内が届きます。</p>
+                <h5 class="mt-2" id="completeTitle">ご注文を承りました</h5>
+                <p class="text-muted small mb-3" id="completeLead">担当者から支払い方法・お渡し方法のご案内が届きます。</p>
                 <div id="completeSummary" class="text-start small mb-3"></div>
                 <button class="btn btn-primary" data-bs-dismiss="modal" onclick="location.reload()">閉じる</button>
             </div>
@@ -262,16 +304,50 @@ function cartKey(merchandise_id, color_id, size_id) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    // 暫定購入フォーム: 学籍番号の自動変換（全角→半角・小文字→大文字）
+    // 暫定購入フォーム: 学籍番号の自動変換（全角→半角・小文字→大文字、英数字・ハイフン以外は除去）
     const studentInput = document.getElementById('pendingStudentId');
     if (studentInput) {
+        const sanitizeStudentId = (val) => val
+            .replace(/[！-～]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
+            .replace(/　/g, '')
+            .toUpperCase()
+            .replace(/[^A-Z0-9\-]/g, '');
+
+        // IME 変換中フラグ（変換中は値を書き換えない）
+        let composing = false;
+        studentInput.addEventListener('compositionstart', () => { composing = true; });
+        studentInput.addEventListener('compositionend', function () {
+            composing = false;
+            // 変換確定後にサニタイズ
+            const before = this.value;
+            const after = sanitizeStudentId(before);
+            if (before !== after) {
+                this.value = after;
+                this.setSelectionRange(after.length, after.length);
+            }
+        });
+
         studentInput.addEventListener('input', function () {
+            if (composing) return; // IME 変換中はスキップ
             const pos = this.selectionStart;
-            this.value = this.value
-                .replace(/[！-～]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
-                .replace(/　/g, ' ')
-                .toUpperCase();
-            this.setSelectionRange(pos, pos);
+            const before = this.value;
+            const after = sanitizeStudentId(before);
+            if (before === after) return;
+            this.value = after;
+            // 文字が除去された分だけカーソル位置を補正
+            const diff = before.length - after.length;
+            this.setSelectionRange(Math.max(0, pos - diff), Math.max(0, pos - diff));
+        });
+
+        studentInput.addEventListener('paste', function (e) {
+            e.preventDefault();
+            const text = (e.clipboardData || window.clipboardData).getData('text');
+            const sanitized = sanitizeStudentId(text);
+            const start = this.selectionStart;
+            const end = this.selectionEnd;
+            this.value = this.value.substring(0, start) + sanitized + this.value.substring(end);
+            const newPos = start + sanitized.length;
+            this.setSelectionRange(newPos, newPos);
         });
     }
 
@@ -297,13 +373,44 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // 「注文に進む」ボタン
-    document.getElementById('checkoutBtn').addEventListener('click', () => {
-        const oc = bootstrap.Offcanvas.getInstance(document.getElementById('cartOffcanvas'));
-        if (oc) oc.hide();
-        openCheckout();
+    // 「注文に進む」ボタン（販売中商品が無い時は #checkoutBtn が描画されない）
+    const checkoutBtn = document.getElementById('checkoutBtn');
+    if (checkoutBtn) {
+        checkoutBtn.addEventListener('click', () => {
+            const oc = bootstrap.Offcanvas.getInstance(document.getElementById('cartOffcanvas'));
+            if (oc) oc.hide();
+            openCheckout();
+        });
+    }
+
+    // 「振込完了を報告」ボタン（イベント委譲で動的描画にも対応）
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.submit-payment-btn');
+        if (btn) submitPayment(btn);
     });
 });
+
+async function submitPayment(btn) {
+    const orderId = btn.dataset.orderId;
+    if (!confirm('振込が完了したことを管理者に報告しますか？\n（誤って報告した場合は管理者にご連絡ください）')) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 送信中...';
+    try {
+        const res  = await fetch(`/api/member/store/orders/${orderId}/submit-payment`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert(data.error?.message || '報告に失敗しました');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-send-check"></i> 振込完了を報告';
+        }
+    } catch (e) {
+        alert('通信エラーが発生しました');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-send-check"></i> 振込完了を報告';
+    }
+}
 
 function showAddedToast() {
     let toast = document.getElementById('shopToast');
@@ -507,6 +614,13 @@ async function submitCheckout() {
         const data = await res.json();
         if (data.success) {
             bootstrap.Modal.getInstance(document.getElementById('checkoutModal')).hide();
+            const wasUpdated = data.data.was_updated === true;
+            document.getElementById('completeTitle').textContent =
+                wasUpdated ? 'ご注文内容を更新しました' : 'ご注文を承りました';
+            document.getElementById('completeLead').textContent =
+                wasUpdated
+                    ? '既存の未入金注文の内容を、最新のカート内容に上書きしました。'
+                    : '担当者から支払い方法・お渡し方法のご案内が届きます。';
             document.getElementById('completeSummary').innerHTML = `
                 <div>注文番号: #${data.data.id}</div>
                 <div>合計: ¥${Number(data.data.total_amount).toLocaleString()}</div>

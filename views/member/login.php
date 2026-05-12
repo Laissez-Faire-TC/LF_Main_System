@@ -25,11 +25,15 @@
 
             <?php if (!empty($returnTo) && strpos($returnTo, '/store') === 0): ?>
             <hr class="my-4">
-            <div class="alert alert-warning small">
+            <div class="alert alert-warning small mb-2">
                 <i class="bi bi-exclamation-circle"></i>
-                まだ会員登録されていない方は、
-                <a href="/store/pending" class="alert-link">学籍番号を入力して購入</a>
-                できます（後日、入会登録時に自動で紐付けされます）。
+                まだ会員登録されていない方は、下のボタンから学籍番号を入力して購入できます。<br>
+                <span class="text-muted">（後日、入会登録時に自動で紐付けされます）</span>
+            </div>
+            <div class="d-grid">
+                <a href="/store/pending" class="btn btn-warning fw-bold">
+                    <i class="bi bi-cart-plus"></i> 学籍番号を入力して購入する
+                </a>
             </div>
             <?php endif; ?>
 
@@ -43,14 +47,38 @@
 </div>
 
 <script>
-document.getElementById('student_id').addEventListener('input', function() {
-    const pos = this.selectionStart;
-    this.value = this.value
+(function() {
+    const input = document.getElementById('student_id');
+    if (!input) return;
+
+    const sanitize = (val) => val
         .replace(/[！-～]/g, s => String.fromCharCode(s.charCodeAt(0) - 0xFEE0))
-        .replace(/　/g, ' ')
-        .toUpperCase();
-    this.setSelectionRange(pos, pos);
-});
+        .replace(/　/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9\-]/g, '');
+
+    let composing = false;
+    input.addEventListener('compositionstart', () => { composing = true; });
+    input.addEventListener('compositionend', function() {
+        composing = false;
+        const after = sanitize(this.value);
+        if (this.value !== after) {
+            this.value = after;
+            this.setSelectionRange(after.length, after.length);
+        }
+    });
+
+    input.addEventListener('input', function() {
+        if (composing) return;
+        const pos = this.selectionStart;
+        const before = this.value;
+        const after = sanitize(before);
+        if (before === after) return;
+        this.value = after;
+        const diff = before.length - after.length;
+        this.setSelectionRange(Math.max(0, pos - diff), Math.max(0, pos - diff));
+    });
+})();
 
 async function handleMemberLogin(e) {
     e.preventDefault();

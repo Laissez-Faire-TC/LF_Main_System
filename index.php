@@ -395,6 +395,7 @@ $router->delete('/api/merchandise/{id}', 'MerchandiseController@destroy');
 // 物販ショップ（会員）
 $router->get('/member/store', 'MerchandiseShopController@memberShop');
 $router->post('/api/member/store/checkout', 'MerchandiseShopController@memberCheckout');
+$router->post('/api/member/store/orders/{id}/submit-payment', 'MerchandiseShopController@submitPayment');
 
 // 物販ショップ（暫定購入: DB未登録の入会予定者向け） - 固定パスを先に登録
 $router->get('/store/pending', 'MerchandiseShopController@pendingShop');

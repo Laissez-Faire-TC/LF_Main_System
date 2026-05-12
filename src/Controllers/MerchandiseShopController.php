@@ -111,7 +111,7 @@ class MerchandiseShopController
         ];
 
         try {
-            $order = MerchandiseOrder::create($cart, $buyer);
+            $order = MerchandiseOrder::createOrUpdate($cart, $buyer);
             Response::success(array_merge($order, ['matched' => $isMember]));
         } catch (Exception $e) {
             Response::error($e->getMessage(), 400, 'CHECKOUT_ERROR');
@@ -197,7 +197,7 @@ class MerchandiseShopController
         ];
 
         try {
-            $order = MerchandiseOrder::create($cart, $buyer);
+            $order = MerchandiseOrder::createOrUpdate($cart, $buyer);
             Response::success($order);
         } catch (Exception $e) {
             Response::error($e->getMessage(), 400, 'CHECKOUT_ERROR');
@@ -251,11 +251,37 @@ class MerchandiseShopController
         ];
 
         try {
-            $order = MerchandiseOrder::create($cart, $buyer);
+            $order = MerchandiseOrder::createOrUpdate($cart, $buyer);
             Response::success($order);
         } catch (Exception $e) {
             Response::error($e->getMessage(), 400, 'CHECKOUT_ERROR');
         }
+    }
+
+    /**
+     * 会員による振込完了報告 API
+     * POST /api/member/store/orders/{id}/submit-payment
+     */
+    public function submitPayment(array $params): void
+    {
+        if (!$this->checkMemberAuth()) {
+            Response::error('ログインが必要です', 401, 'UNAUTHORIZED');
+            return;
+        }
+
+        $memberId = (int)($_SESSION['member_id'] ?? 0);
+        $orderId  = (int)($params['id'] ?? 0);
+        if ($memberId <= 0 || $orderId <= 0) {
+            Response::error('不正なリクエストです', 400, 'INVALID_REQUEST');
+            return;
+        }
+
+        $ok = MerchandiseOrder::submitPayment($orderId, $memberId);
+        if (!$ok) {
+            Response::error('この注文は報告できません（支払済み・他会員の注文・既に報告済みのいずれか）', 400, 'SUBMIT_NOT_ALLOWED');
+            return;
+        }
+        Response::success(MerchandiseOrder::findById($orderId));
     }
 
     private function checkMemberAuth(): bool

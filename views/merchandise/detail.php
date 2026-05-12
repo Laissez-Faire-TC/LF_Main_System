@@ -365,19 +365,27 @@ async function loadOrders() {
             : (o.payment_status === 'cancelled'
                 ? '<span class="badge bg-secondary">キャンセル</span>'
                 : '<span class="badge bg-warning text-dark">未入金</span>');
+        const submittedBadge = (o.payment_status === 'unpaid' && Number(o.payment_submitted) === 1)
+            ? `<span class="badge bg-info text-dark ms-1" title="${o.payment_submitted_at ? '報告: ' + String(o.payment_submitted_at).substring(0,16).replace('T',' ') : ''}">
+                 <i class="bi bi-send-check"></i> 振込報告済
+               </span>`
+            : '';
+        const confirmBtnClass = (o.payment_status !== 'paid' && Number(o.payment_submitted) === 1)
+            ? 'btn-primary'
+            : (o.payment_status === 'paid' ? 'btn-outline-success' : 'btn-success');
         return `
-        <div class="card mb-2">
+        <div class="card mb-2 ${(o.payment_status === 'unpaid' && Number(o.payment_submitted) === 1) ? 'border-info' : ''}">
             <div class="card-body py-2">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <strong>${escapeHtml(o.buyer_name)}</strong>
                         ${o.member_id ? `<small class="text-muted ms-1">（会員）</small>` : ''}
-                        ${paidBadge}
+                        ${paidBadge}${submittedBadge}
                         <small class="text-muted ms-2">${o.created_at ? o.created_at.substring(0, 16).replace('T', ' ') : ''}</small>
                     </div>
                     <div>
                         <span class="fw-bold me-2">¥${Number(o.total_amount).toLocaleString()}</span>
-                        <button class="btn btn-sm ${o.payment_status === 'paid' ? 'btn-outline-success' : 'btn-success'}"
+                        <button class="btn btn-sm ${confirmBtnClass}"
                                 onclick="togglePaid(${o.id})">
                             ${o.payment_status === 'paid' ? '未入金に戻す' : '入金確認'}
                         </button>

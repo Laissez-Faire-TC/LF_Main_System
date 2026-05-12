@@ -5,10 +5,27 @@
     </button>
 </div>
 
-<!-- 未マッチ注文（DB未登録の暫定購入者） -->
+<!-- 未入会の購入者（学籍番号が会員DBに無い） -->
+<div id="unenrolledSection" class="card border-danger mb-4 d-none">
+    <div class="card-header bg-danger bg-opacity-10 border-danger d-flex justify-content-between align-items-center">
+        <span>
+            <i class="bi bi-exclamation-octagon-fill text-danger"></i>
+            未入会の購入者
+            <span class="badge bg-danger" id="unenrolledCount">0</span>
+        </span>
+        <small class="text-muted">入会フォーム提出待ち。提出後に自動で紐付けされます。</small>
+    </div>
+    <div class="card-body p-0" id="unenrolledList"></div>
+</div>
+
+<!-- 入会済みだがマッチング待ち -->
 <div id="pendingSection" class="card border-warning mb-4 d-none">
     <div class="card-header bg-warning bg-opacity-25 border-warning d-flex justify-content-between align-items-center">
-        <span><i class="bi bi-person-exclamation"></i> 未登録購入者の注文 <span class="badge bg-warning text-dark" id="pendingCount">0</span></span>
+        <span>
+            <i class="bi bi-person-check"></i>
+            DB登録済み（マッチング待ち）
+            <span class="badge bg-warning text-dark" id="pendingCount">0</span>
+        </span>
         <button class="btn btn-warning btn-sm" onclick="matchAll()">
             <i class="bi bi-people"></i> 会員DBと一括マッチング
         </button>
@@ -62,28 +79,48 @@ document.addEventListener('DOMContentLoaded', () => {
 async function loadPending() {
     const res  = await fetch('/api/merchandise/pending-orders');
     const data = await res.json();
-    const sec  = document.getElementById('pendingSection');
+
+    const matchedSec    = document.getElementById('pendingSection');
+    const unenrolledSec = document.getElementById('unenrolledSection');
+
     if (!data.success || !data.data.orders.length) {
-        sec.classList.add('d-none');
+        matchedSec.classList.add('d-none');
+        unenrolledSec.classList.add('d-none');
         return;
     }
 
-    sec.classList.remove('d-none');
-    document.getElementById('pendingCount').textContent = data.data.orders.length;
-    document.getElementById('pendingList').innerHTML = data.data.orders.map(o => {
+    const matched    = data.data.orders.filter(o =>  o.matched_member_id);
+    const unenrolled = data.data.orders.filter(o => !o.matched_member_id);
+
+    renderPendingList(matchedSec,    'pendingList',    'pendingCount',    matched,    'matched');
+    renderPendingList(unenrolledSec, 'unenrolledList', 'unenrolledCount', unenrolled, 'unenrolled');
+}
+
+function renderPendingList(section, listId, countId, orders, kind) {
+    if (!orders.length) {
+        section.classList.add('d-none');
+        return;
+    }
+    section.classList.remove('d-none');
+    document.getElementById(countId).textContent = orders.length;
+    document.getElementById(listId).innerHTML = orders.map(o => {
         const items = o.items.map(it => `
             ${escapeHtml(it.merchandise_name)}${it.color_name ? '／' + escapeHtml(it.color_name) : ''}${it.size_name ? '／' + escapeHtml(it.size_name) : ''} × ${it.quantity}
         `).join('、 ');
-        const matchHint = o.matched_member_id
-            ? `<span class="badge bg-success ms-1">DB登録済み: ${escapeHtml(o.matched_member_name || '')}（一括マッチング待ち）</span>`
-            : '';
+
+        const ageInfo = formatAge(o.created_at, kind);
+        const tag = kind === 'unenrolled'
+            ? '<span class="badge bg-danger ms-1"><i class="bi bi-exclamation-circle"></i> 未入会</span>'
+            : `<span class="badge bg-success ms-1">DB登録済み: ${escapeHtml(o.matched_member_name || '')}</span>`;
+
         return `
         <div class="p-3 border-bottom">
             <div class="d-flex justify-content-between align-items-start">
                 <div>
                     <strong>${escapeHtml(o.buyer_name)}</strong>
                     <span class="badge bg-secondary ms-1">${escapeHtml(o.pending_student_id)}</span>
-                    ${matchHint}
+                    ${tag}
+                    ${ageInfo.badge}
                     <div class="small text-muted mt-1">
                         ${o.pending_line_name ? `LINE: ${escapeHtml(o.pending_line_name)}` : ''}
                         ${o.pending_phone     ? ` ／ TEL: ${escapeHtml(o.pending_phone)}`  : ''}
@@ -97,6 +134,24 @@ async function loadPending() {
             </div>
         </div>`;
     }).join('');
+}
+
+function formatAge(createdAt, kind) {
+    if (!createdAt) return { badge: '' };
+    const created = new Date(createdAt.replace(' ', 'T'));
+    const days = Math.floor((Date.now() - created.getTime()) / 86400000);
+
+    let label, cls;
+    if (days < 1)        { label = '本日';                cls = 'bg-light text-dark border'; }
+    else if (days < 7)   { label = `${days}日前`;          cls = 'bg-light text-dark border'; }
+    else if (days < 14)  { label = `${days}日前`;          cls = 'bg-warning text-dark'; }
+    else if (days < 30)  { label = `${days}日前`;          cls = 'bg-warning text-dark'; }
+    else                 { label = `${days}日前 放置`;     cls = 'bg-danger'; }
+
+    // 未入会セクションは7日以上で目立たせる
+    if (kind === 'unenrolled' && days >= 7) cls = 'bg-danger';
+
+    return { badge: `<span class="badge ${cls} ms-1"><i class="bi bi-clock"></i> ${label}</span>` };
 }
 
 async function matchAll() {
