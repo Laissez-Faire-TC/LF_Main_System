@@ -18,6 +18,12 @@
             <input type="text" class="form-control form-control-lg" id="studentIdInput"
                    placeholder="例: 1Y25F001-1"
                    autocomplete="off"
+                   autocapitalize="characters"
+                   inputmode="latin"
+                   lang="en"
+                   pattern="[A-Z0-9\-]*"
+                   style="text-transform: uppercase; ime-mode: disabled;"
+                   oninput="this.value = this.value.replace(/[Ａ-Ｚａ-ｚ０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/[ー－−―‐]/g, '-').toUpperCase().replace(/[^A-Z0-9\-]/g, '')"
                    onkeydown="if(event.key==='Enter') doLogin()">
         </div>
 
