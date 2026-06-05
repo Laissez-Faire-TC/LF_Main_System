@@ -12,7 +12,7 @@ class MemberController
 
     public function __construct()
     {
-        Auth::requireAuth();
+        Auth::requirePermission('members');
         $this->model = new Member();
         $this->parser = new StudentIdParserService();
     }
@@ -108,7 +108,34 @@ class MemberController
             Response::error('会員が見つかりません', 404, 'NOT_FOUND');
         }
 
+        // OAuth連携状況を付加（幹部による救済解除の判断用）
+        $oauthModel = new MemberOauthIdentity();
+        $member['oauth_providers'] = array_map(
+            fn($row) => $row['provider'],
+            $oauthModel->findByMember($id)
+        );
+
         Response::success($member);
+    }
+
+    /**
+     * 幹部によるOAuth連携の強制解除（救済用）
+     * DELETE /api/members/{id}/oauth
+     *   連携をすべて解除し、その会員が学籍番号ログインに戻れるようにする。
+     */
+    public function unlinkOauth(array $params): void
+    {
+        $id     = (int)$params['id'];
+        $member = $this->model->find($id);
+        if (!$member) {
+            Response::error('会員が見つかりません', 404, 'NOT_FOUND');
+            return;
+        }
+
+        $oauthModel = new MemberOauthIdentity();
+        $deleted    = $oauthModel->deleteAllByMember($id);
+
+        Response::success(['deleted' => $deleted], "{$deleted}件の連携を解除しました。学籍番号ログインが可能になりました。");
     }
 
     /**
@@ -592,12 +619,16 @@ class MemberController
                     continue;
                 }
 
-                // 学籍番号から入学年度を自動判定
+                // 学籍番号から入学年度・学科/学系を自動判定
                 $enrollmentYear = null;
+                $autoDepartment = null;
                 if (!empty($row[6])) {
                     $parsed = $this->parser->parse($row[6]);
                     if ($parsed['is_valid'] && $parsed['enrollment_year']) {
                         $enrollmentYear = $parsed['enrollment_year'];
+                    }
+                    if ($parsed['is_valid'] && !empty($parsed['department'])) {
+                        $autoDepartment = $parsed['department'];
                     }
                 }
 
@@ -659,7 +690,7 @@ class MemberController
                     'gender' => $gender,
                     'grade' => $grade,
                     'faculty' => trim($row[4]),
-                    'department' => trim($row[5]),
+                    'department' => $autoDepartment ?? $this->parser->normalizeGakukei(trim($row[5])),
                     'student_id' => trim($row[6]),
                     'phone' => trim($row[7]),
                     'address' => trim($row[8]),

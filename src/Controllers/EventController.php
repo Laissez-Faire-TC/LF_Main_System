@@ -9,7 +9,7 @@ class EventController
 
     public function __construct()
     {
-        Auth::requireAuth();
+        Auth::requirePermission('events');
         $this->model = new Event();
         $this->db    = Database::getInstance();
     }
@@ -272,6 +272,125 @@ class EventController
             'total_per_person'   => $totalPerPerson,
             'expenses'           => $expenses,
         ]);
+    }
+
+    // ──────────────────────────────────────────
+    // API: 班決め（グループ分け）
+    // ──────────────────────────────────────────
+
+    /**
+     * 班決め情報取得（参加確定者＋制約）
+     */
+    public function getTeams(array $params): void
+    {
+        $id          = (int)$params['id'];
+        $event       = $this->model->find($id);
+        if (!$event) {
+            Response::error('企画が見つかりません', 404, 'NOT_FOUND');
+            return;
+        }
+
+        $appModel        = new EventApplication();
+        $constraintModel = new EventTeamConstraint();
+
+        Response::success([
+            'members'     => $appModel->getByEventId($id),   // team_no 含む
+            'constraints' => $constraintModel->getByEventId($id),
+        ]);
+    }
+
+    /**
+     * 班割り当てを保存
+     * body: { assignments: { application_id: team_no|null, ... } }
+     */
+    public function saveTeams(array $params): void
+    {
+        $id    = (int)$params['id'];
+        $event = $this->model->find($id);
+        if (!$event) {
+            Response::error('企画が見つかりません', 404, 'NOT_FOUND');
+            return;
+        }
+
+        $assignments = Request::get('assignments', []);
+        if (!is_array($assignments)) {
+            $assignments = [];
+        }
+
+        $appModel = new EventApplication();
+        $appModel->saveTeamAssignments($id, $assignments);
+
+        Response::success([], '班割りを保存しました');
+    }
+
+    /**
+     * 制約を追加（絶対一緒 / 絶対別）
+     * body: { member_a_id, member_b_id, type }
+     */
+    public function addTeamConstraint(array $params): void
+    {
+        $id    = (int)$params['id'];
+        $event = $this->model->find($id);
+        if (!$event) {
+            Response::error('企画が見つかりません', 404, 'NOT_FOUND');
+            return;
+        }
+
+        $memberA = (int)Request::get('member_a_id');
+        $memberB = (int)Request::get('member_b_id');
+        $type    = Request::get('type');
+
+        if ($memberA <= 0 || $memberB <= 0 || $memberA === $memberB) {
+            Response::error('2名のメンバーを選択してください', 422, 'INVALID');
+            return;
+        }
+        if (!in_array($type, ['together', 'apart'], true)) {
+            Response::error('種別が不正です', 422, 'INVALID');
+            return;
+        }
+
+        $constraintModel = new EventTeamConstraint();
+        $constraintModel->add($id, $memberA, $memberB, $type);
+
+        Response::success(['constraints' => $constraintModel->getByEventId($id)], '制約を追加しました');
+    }
+
+    /**
+     * 制約を削除
+     */
+    public function deleteTeamConstraint(array $params): void
+    {
+        $constraintId = (int)$params['cid'];
+        $constraintModel = new EventTeamConstraint();
+        $constraintModel->delete($constraintId);
+        Response::success([], '制約を削除しました');
+    }
+
+    // ── API: 申込URLトークン ──
+
+    public function getToken(array $params): void
+    {
+        $id    = (int)$params['id'];
+        $token = EventToken::findByEvent($id);
+        Response::success(['token' => $token]);
+    }
+
+    public function generateToken(array $params): void
+    {
+        $id    = (int)$params['id'];
+        $event = $this->model->find($id);
+        if (!$event) {
+            Response::error('企画が見つかりません', 404, 'NOT_FOUND');
+            return;
+        }
+        $token = EventToken::generate($id);
+        Response::success(['token' => $token]);
+    }
+
+    public function deleteToken(array $params): void
+    {
+        EventToken::delete((int)$params['id']);
+        Response::success([]);
     }
 
     // ──────────────────────────────────────────

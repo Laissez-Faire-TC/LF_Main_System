@@ -6,7 +6,7 @@ class ExpeditionController
 {
     public function __construct()
     {
-        Auth::requireAuth();
+        Auth::requirePermission('expeditions');
     }
 
     // ==================== 一覧・詳細・CRUD ====================
@@ -97,7 +97,10 @@ class ExpeditionController
      */
     public function updateParticipant(array $params): void
     {
-        $data        = Request::only(['pre_night', 'lunch', 'status']);
+        $data        = Request::only([
+            'pre_night', 'lunch', 'status',
+            'is_joining_car', 'driver_type', 'timescar_number', 'can_book_car', 'friday_last_class',
+        ]);
         $participant = ExpeditionParticipant::update($params['pid'], $data);
         Response::success($participant);
     }
@@ -225,11 +228,19 @@ class ExpeditionController
      */
     public function autoAssignCars(array $params): void
     {
-        Auth::requireAuth();
-        $body        = Request::json();
-        $capacities  = $body['capacities']   ?? [];
-        $soloBookers = is_array($body['solo_bookers'] ?? null) ? array_map('intval', $body['solo_bookers']) : [];
-        $result      = ExpeditionCar::autoAssignOutbound((int)$params['id'], $capacities, $soloBookers);
+        Auth::requirePermission('expeditions');
+        $body            = Request::json();
+        $capacities      = $body['capacities']   ?? [];
+        $soloBookers     = is_array($body['solo_bookers'] ?? null)     ? array_map('intval', $body['solo_bookers'])     : [];
+        $selectedBookers = is_array($body['selected_bookers'] ?? null) ? array_map('intval', $body['selected_bookers']) : [];
+        // 乗員の固定指定: { member_id: car_owner_member_id, ... }（人 → 乗せる車のドライバー）
+        $pinnedMembers   = [];
+        if (is_array($body['pinned_members'] ?? null)) {
+            foreach ($body['pinned_members'] as $memberId => $carOwnerId) {
+                $pinnedMembers[(int)$memberId] = (int)$carOwnerId;
+            }
+        }
+        $result          = ExpeditionCar::autoAssignOutbound((int)$params['id'], $capacities, $soloBookers, $selectedBookers, $pinnedMembers);
         Response::success($result);
     }
 
@@ -241,7 +252,7 @@ class ExpeditionController
      */
     public function resolveParticipantStations(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('expeditions');
         $participants = ExpeditionParticipant::findByExpedition((int)$params['id']);
         $result       = [];
 
@@ -268,7 +279,7 @@ class ExpeditionController
      */
     public function autoAssignReturnCars(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('expeditions');
         $body              = Request::json();
         $mode              = in_array($body['mode'] ?? '', ['by_station', 'by_driver_home'])
                              ? $body['mode'] : 'by_station';

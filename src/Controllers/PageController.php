@@ -35,7 +35,14 @@ class PageController
             Response::redirect('/dashboard');
         }
 
-        $this->render('auth/login');
+        $oauthService = new OAuthService();
+        $oauthError   = $_SESSION['admin_oauth_error'] ?? null;
+        unset($_SESSION['admin_oauth_error']);
+
+        $this->render('auth/login', [
+            'googleEnabled' => $oauthService->isEnabled('google'),
+            'oauthError'    => $oauthError,
+        ]);
     }
 
     /**
@@ -43,7 +50,7 @@ class PageController
      */
     public function camps(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('camps');
         $this->render('camps/index');
     }
 
@@ -52,7 +59,7 @@ class PageController
      */
     public function campDetail(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('camps');
         $campId = (int)$params['id'];
 
         $campModel = new Camp();
@@ -72,7 +79,7 @@ class PageController
      */
     public function expeditions(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('expeditions');
         $this->render('expeditions/index');
     }
 
@@ -81,7 +88,7 @@ class PageController
      */
     public function expeditionDetail(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('expeditions');
         $this->render('expeditions/detail', ['id' => $params['id']]);
     }
 
@@ -90,7 +97,7 @@ class PageController
      */
     public function result(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('camps');
         $campId = (int)$params['id'];
 
         $campModel = new Camp();
@@ -110,7 +117,7 @@ class PageController
      */
     public function partialSchedule(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('camps');
         $campId = (int)$params['id'];
 
         $campModel = new Camp();

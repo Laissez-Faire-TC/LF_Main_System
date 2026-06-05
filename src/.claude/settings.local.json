@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(php tests/CalculationServiceTest.php:*)",
+      "Bash(/usr/bin/php:*)",
+      "Bash(/usr/local/bin/php --version)",
+      "Bash(brew list:*)",
+      "Bash(php:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nInitial commit: 合宿費用計算アプリ\n\n- PHP 7.4+ / MySQL 5.7 / Bootstrap 5 ベースのWebアプリ\n- 参加者管理（CSV一括登録、途中参加・途中抜け対応）\n- 費用自動計算（宿泊、食事調整、バス、施設利用料、雑費）\n- PDF/Excel出力機能\n- 途中参加・途中抜けスケジュール一覧\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git pull:*)",
+      "Bash(git push:*)",
+      "Bash(git commit:*)",
+      "Bash(where:*)",
+      "Bash(C:xamppphpphp.exe --version)",
+      "Bash(\"C:\\xampp\\php\\php.exe\" -r \"copy(''https://getcomposer.org/installer'', ''composer-setup.php'');\")",
+      "Bash(\"C:\\xampp\\php\\php.exe\" composer-setup.php)",
+      "Bash(\"C:\\xampp\\php\\php.exe\" -r \"unlink(''composer-setup.php'');\")",
+      "Bash(\"C:\\xampp\\php\\php.exe\" composer.phar install)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

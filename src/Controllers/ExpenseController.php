@@ -8,7 +8,7 @@ class ExpenseController
 
     public function __construct()
     {
-        Auth::requireAuth();
+        Auth::requirePermission('camps');
         $this->model = new Expense();
     }
 

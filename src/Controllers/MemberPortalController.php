@@ -17,7 +17,18 @@ class MemberPortalController
             Response::redirect($returnTo ?: '/member/home');
             return;
         }
-        $this->render('member/login', ['returnTo' => $returnTo]);
+
+        // OAuthコールバックからのエラー/通知メッセージ（あれば表示）
+        $oauthError = $_SESSION['oauth_flash_error'] ?? null;
+        unset($_SESSION['oauth_flash_error']);
+
+        $oauthService = new OAuthService();
+        $this->render('member/login', [
+            'returnTo'      => $returnTo,
+            'googleEnabled' => $oauthService->isEnabled('google'),
+            'lineEnabled'   => $oauthService->isEnabled('line'),
+            'oauthError'    => $oauthError,
+        ]);
     }
 
     /**
@@ -40,10 +51,18 @@ class MemberPortalController
         $member = $memberModel->findByStudentId($studentId);
 
         if ($member && in_array($member['status'], [Member::STATUS_ACTIVE, Member::STATUS_OB_OG])) {
-            $_SESSION[self::SESSION_KEY] = true;
-            $_SESSION['member_id']   = $member['id'];
-            $_SESSION['member_name'] = $member['name_kanji'];
-            $_SESSION['member_login_time'] = time();
+            // OAuth連携済みの会員は学籍番号ログインを禁止（OAuth経由のみ許可）
+            $oauthModel = new MemberOauthIdentity();
+            if ($oauthModel->countByMember((int)$member['id']) > 0) {
+                Response::error(
+                    'この会員は外部アカウント（Google／LINE）連携が設定されています。学籍番号ではログインできません。下のボタンからログインしてください。',
+                    403,
+                    'OAUTH_REQUIRED'
+                );
+                return;
+            }
+
+            $this->establishSession($member);
 
             $returnTo = $this->safeReturnTo(Request::get('return'));
             Response::success(['redirect' => $returnTo ?: '/member/home'], 'ログインしました');
@@ -66,6 +85,196 @@ class MemberPortalController
         // パスのみ許可（先頭が "/" かつ "//" や "/\\" で始まらない）
         if (!preg_match('#^/(?!/|\\\\)[^\s]*$#', $url)) return null;
         return $url;
+    }
+
+    /**
+     * ログインセッションを確立（学籍番号ログイン／OAuthログイン共通）
+     */
+    private function establishSession(array $member): void
+    {
+        $_SESSION[self::SESSION_KEY] = true;
+        $_SESSION['member_id']   = $member['id'];
+        $_SESSION['member_name'] = $member['name_kanji'];
+        $_SESSION['member_login_time'] = time();
+    }
+
+    // ==================== OAuth2.0 連携・ログイン ====================
+
+    /**
+     * OAuth開始（ログイン用・連携用 兼用）
+     * GET /member/oauth/{provider}/start
+     *   - 未ログイン     → ログイン目的。コールバックで会員を引き当ててログイン
+     *   - ログイン中     → 連携目的。コールバックで現在の会員に紐付け
+     */
+    public function oauthStart(array $params): void
+    {
+        $provider     = $this->normalizeProvider($params['provider'] ?? '');
+        $oauthService = new OAuthService();
+
+        if (!$provider || !$oauthService->isEnabled($provider)) {
+            $_SESSION['oauth_flash_error'] = 'この連携方法は現在利用できません。';
+            Response::redirect('/member/login');
+            return;
+        }
+
+        // CSRF対策の state を生成しセッションに保存
+        $state = bin2hex(random_bytes(16));
+        $_SESSION['oauth_state']    = $state;
+        $_SESSION['oauth_provider'] = $provider;
+        // ログイン目的か連携目的かを記録
+        $_SESSION['oauth_mode']     = $this->checkAuth() ? 'link' : 'login';
+        // ログイン後の戻り先
+        $_SESSION['oauth_return']   = $this->safeReturnTo($_GET['return'] ?? null);
+
+        Response::redirect($oauthService->getAuthUrl($provider, $state));
+    }
+
+    /**
+     * OAuthコールバック
+     * GET /member/oauth/{provider}/callback
+     */
+    public function oauthCallback(array $params): void
+    {
+        $provider     = $this->normalizeProvider($params['provider'] ?? '');
+        $oauthService = new OAuthService();
+
+        $mode     = $_SESSION['oauth_mode'] ?? 'login';
+        $returnTo = $this->safeReturnTo($_SESSION['oauth_return'] ?? null);
+
+        // state / provider 照合（CSRF対策）
+        $expectedState    = $_SESSION['oauth_state'] ?? null;
+        $expectedProvider = $_SESSION['oauth_provider'] ?? null;
+        $gotState         = $_GET['state'] ?? null;
+        $code             = $_GET['code'] ?? null;
+
+        // 使い捨て：照合後はクリア
+        unset($_SESSION['oauth_state'], $_SESSION['oauth_provider'], $_SESSION['oauth_mode'], $_SESSION['oauth_return']);
+
+        $failRedirect = ($mode === 'link') ? '/member/profile' : '/member/login';
+
+        if (!$provider || !$oauthService->isEnabled($provider)
+            || !$expectedState || !$gotState || !hash_equals($expectedState, (string)$gotState)
+            || $expectedProvider !== $provider || empty($code)) {
+            $_SESSION['oauth_flash_error'] = '認証に失敗しました。お手数ですがもう一度お試しください。';
+            Response::redirect($failRedirect);
+            return;
+        }
+
+        try {
+            $info = $oauthService->handleCallback($provider, (string)$code);
+        } catch (Exception $e) {
+            $_SESSION['oauth_flash_error'] = '認証に失敗しました：' . $e->getMessage();
+            Response::redirect($failRedirect);
+            return;
+        }
+
+        $oauthModel = new MemberOauthIdentity();
+
+        if ($mode === 'link') {
+            $this->oauthLink($provider, $info, $oauthModel, $returnTo);
+        } else {
+            $this->oauthLogin($provider, $info, $oauthModel, $returnTo);
+        }
+    }
+
+    /**
+     * OAuthログイン処理（連携済みの会員を引き当ててログイン）
+     */
+    private function oauthLogin(string $provider, array $info, MemberOauthIdentity $oauthModel, ?string $returnTo): void
+    {
+        $identity = $oauthModel->findByProviderUser($provider, $info['provider_user_id']);
+
+        if (!$identity) {
+            $_SESSION['oauth_flash_error'] =
+                'この外部アカウントは会員と連携されていません。学籍番号でログイン後、登録情報の変更画面から連携してください。';
+            Response::redirect('/member/login');
+            return;
+        }
+
+        $memberModel = new Member();
+        $member      = $memberModel->find((int)$identity['member_id']);
+
+        if (!$member || !in_array($member['status'], [Member::STATUS_ACTIVE, Member::STATUS_OB_OG])) {
+            $_SESSION['oauth_flash_error'] = 'この会員アカウントは現在ログインできません。幹部にお問い合わせください。';
+            Response::redirect('/member/login');
+            return;
+        }
+
+        $this->establishSession($member);
+        Response::redirect($returnTo ?: '/member/home');
+    }
+
+    /**
+     * OAuth連携処理（ログイン中の会員に外部アカウントを紐付け）
+     */
+    private function oauthLink(string $provider, array $info, MemberOauthIdentity $oauthModel, ?string $returnTo): void
+    {
+        $memberId = (int)($_SESSION['member_id'] ?? 0);
+        if ($memberId <= 0) {
+            $_SESSION['oauth_flash_error'] = 'セッションが切れました。再度ログインしてください。';
+            Response::redirect('/member/login');
+            return;
+        }
+
+        // この外部アカウントが既に他の会員に紐付いていないか
+        $existing = $oauthModel->findByProviderUser($provider, $info['provider_user_id']);
+        if ($existing) {
+            if ((int)$existing['member_id'] === $memberId) {
+                Response::redirect('/member/profile?linked=' . $provider);
+            } else {
+                $_SESSION['oauth_flash_error'] = 'この外部アカウントは既に別の会員に連携されています。';
+                Response::redirect('/member/profile');
+            }
+            return;
+        }
+
+        // 同一会員が同プロバイダを二重連携しないように
+        if ($oauthModel->findByMemberAndProvider($memberId, $provider)) {
+            Response::redirect('/member/profile?linked=' . $provider);
+            return;
+        }
+
+        $oauthModel->create($memberId, $provider, $info['provider_user_id'], $info['email'] ?? null, $info['display_name'] ?? null);
+        Response::redirect('/member/profile?linked=' . $provider);
+    }
+
+    /**
+     * OAuth連携の解除（会員本人）
+     * POST /api/member/oauth/{provider}/unlink
+     */
+    public function oauthUnlink(array $params): void
+    {
+        if (!$this->checkAuth()) {
+            Response::error('ログインが必要です', 401, 'UNAUTHORIZED');
+            return;
+        }
+
+        $provider = $this->normalizeProvider($params['provider'] ?? '');
+        if (!$provider) {
+            Response::error('不正なプロバイダです', 400, 'VALIDATION_ERROR');
+            return;
+        }
+
+        $memberId   = (int)($_SESSION['member_id'] ?? 0);
+        $oauthModel = new MemberOauthIdentity();
+
+        if (!$oauthModel->findByMemberAndProvider($memberId, $provider)) {
+            Response::error('この連携は設定されていません', 404, 'NOT_FOUND');
+            return;
+        }
+
+        $oauthModel->deleteByMemberAndProvider($memberId, $provider);
+        Response::success([], '連携を解除しました');
+    }
+
+    /**
+     * プロバイダ名の正規化（許可リスト方式）
+     */
+    private function normalizeProvider(string $provider): ?string
+    {
+        $provider = strtolower(trim($provider));
+        return in_array($provider, [MemberOauthIdentity::PROVIDER_GOOGLE, MemberOauthIdentity::PROVIDER_LINE], true)
+            ? $provider : null;
     }
 
     /**
@@ -503,11 +712,28 @@ class MemberPortalController
             return;
         }
 
+        $oauthModel    = new MemberOauthIdentity();
+        $oauthService  = new OAuthService();
+        $linkedRows    = $oauthModel->findByMember($memberId);
+        $linkedMap     = [];
+        foreach ($linkedRows as $row) {
+            $linkedMap[$row['provider']] = $row;
+        }
+
         $this->render('member/profile', [
-            'member'     => $member,
-            'memberName' => $_SESSION['member_name'] ?? '',
-            'memberId'   => $memberId,
-            'success'    => $_GET['success'] ?? null,
+            'member'        => $member,
+            'memberName'    => $_SESSION['member_name'] ?? '',
+            'memberId'      => $memberId,
+            'success'       => $_GET['success'] ?? null,
+            'linkedMap'     => $linkedMap,
+            'googleEnabled' => $oauthService->isEnabled('google'),
+            'lineEnabled'   => $oauthService->isEnabled('line'),
+            'justLinked'    => $_GET['linked'] ?? null,
+            'oauthError'    => (function() {
+                $e = $_SESSION['oauth_flash_error'] ?? null;
+                unset($_SESSION['oauth_flash_error']);
+                return $e;
+            })(),
         ]);
     }
 
@@ -533,25 +759,29 @@ class MemberPortalController
 
         $editableFields = ['phone', 'address', 'emergency_contact', 'email', 'allergy', 'line_name', 'sns_allowed'];
 
+        // 入力された項目のみ更新対象とする（空欄項目は既存値を維持）
         $newData = [];
         foreach ($editableFields as $field) {
             $val = Request::get($field);
-            if ($val !== null) {
-                $newData[$field] = $field === 'sns_allowed' ? (int)(bool)$val : trim($val);
+            if ($val === null) {
+                continue;
+            }
+            if ($field === 'sns_allowed') {
+                if ($val === '' || $val === null) {
+                    continue;
+                }
+                $newData[$field] = (int)(bool)$val;
+            } else {
+                $trimmed = trim((string)$val);
+                if ($trimmed === '') {
+                    continue;
+                }
+                $newData[$field] = $trimmed;
             }
         }
 
-        // バリデーション
-        if (empty($newData['phone'])) {
-            Response::error('電話番号は必須です', 400, 'VALIDATION_ERROR');
-            return;
-        }
-        if (empty($newData['address'])) {
-            Response::error('住所は必須です', 400, 'VALIDATION_ERROR');
-            return;
-        }
-        if (empty($newData['emergency_contact'])) {
-            Response::error('緊急連絡先は必須です', 400, 'VALIDATION_ERROR');
+        if (empty($newData)) {
+            Response::error('変更したい項目を入力してください', 400, 'VALIDATION_ERROR');
             return;
         }
 
@@ -626,14 +856,76 @@ class MemberPortalController
             $genderMap[$p['name']] = $p['gender'];
         }
 
+        $booklet = $this->mergeTennisData($campId, $booklet);
+        $plans   = $this->buildPlanDivisions($campId);
+
         $this->render('member/booklet', [
             'camp'       => $camp,
             'booklet'    => $booklet,
+            'plans'      => $plans,
             'memberName' => $_SESSION['member_name'] ?? '',
             'myName'     => $myName,
             'isLoggedIn' => true,
             'genderMap'  => $genderMap,
         ]);
+    }
+
+    /**
+     * しおりにテニス班分け（団体戦/紅白戦/対戦表）データを合流させる。
+     * これらは camp_tennis_battles テーブルへ移行済み。
+     */
+    private function mergeTennisData(int $campId, array $booklet): array
+    {
+        $tennis = (new CampTennisBattle())->findByCampId($campId);
+        $booklet['team_battle_teams'] = $tennis['team_battle_teams'] ?? [];
+        $booklet['team_battle_rules'] = $tennis['team_battle_rules'] ?? '';
+        $booklet['kohaku_teams']      = $tennis['kohaku_teams']      ?? ['red' => [], 'white' => []];
+        $booklet['kohaku_rules']      = $tennis['kohaku_rules']      ?? '';
+        $booklet['kohaku_matches']    = $tennis['kohaku_matches']    ?? [];
+        // 紅白戦チームが空（赤白ともに0名）なら非表示にするため空配列化
+        $kt = $booklet['kohaku_teams'];
+        if (empty($kt['red']) && empty($kt['white'])) {
+            $booklet['kohaku_teams'] = [];
+        }
+        return $booklet;
+    }
+
+    /**
+     * 企画班分けを「企画名→班→メンバー」の表示用構造で取得。
+     * 班番号でグルーピングし、未割り当ては除外。
+     */
+    private function buildPlanDivisions(int $campId): array
+    {
+        $model     = new CampPlanDivision();
+        $divisions = $model->getByCampId($campId);
+        $result    = [];
+
+        $slotLabels = ['outbound' => '往路', 'morning' => '午前', 'afternoon' => '午後', 'banquet' => '宴会', 'return' => '復路'];
+
+        foreach ($divisions as $div) {
+            $members = $model->getMembers((int)$div['id']);
+            $groups  = [];
+            foreach ($members as $m) {
+                if ($m['team_no'] === null) continue;
+                $no = (int)$m['team_no'];
+                $groups[$no] = $groups[$no] ?? ['group_name' => $no . '班', 'members' => []];
+                $groups[$no]['members'][] = ['name' => $m['name']];
+            }
+            if (empty($groups)) continue;   // 班割り未実施の企画は表示しない
+            ksort($groups);
+
+            $timing = '';
+            if (!empty($div['day_number'])) {
+                $timing = $div['day_number'] . '日目 ' . ($slotLabels[$div['slot_type']] ?? '');
+            }
+
+            $result[] = [
+                'name'   => $div['name'],
+                'timing' => $timing,
+                'groups' => array_values($groups),
+            ];
+        }
+        return $result;
     }
 
     /**
@@ -671,9 +963,14 @@ class MemberPortalController
             $genderMap[$p['name']] = $p['gender'];
         }
 
+        $bookletCampId = (int)$booklet['camp_id'];
+        $booklet = $this->mergeTennisData($bookletCampId, $booklet);
+        $plans   = $this->buildPlanDivisions($bookletCampId);
+
         $this->render('member/booklet', [
             'camp'       => $camp,
             'booklet'    => $booklet,
+            'plans'      => $plans,
             'memberName' => $_SESSION['member_name'] ?? '',
             'myName'     => $myName,
             'isLoggedIn' => $isLoggedIn,

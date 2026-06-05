@@ -3,10 +3,15 @@
  * 学籍番号解析サービス
  * 早稲田大学理工学部の学籍番号を解析して学部・学科・入学年度を特定
  *
- * 学籍番号フォーマット: 1Y23F158-5
+ * 通常フォーマット: 1Y23F158-5
  * - 1-2文字目: 学部コード（1W=基幹理工、1X=創造理工、1Y=先進理工）
  * - 3-4文字目: 入学年度（下2桁、例: 23=2023年）
  * - 5文字目: 学科コード（創造・先進のみ、基幹は学系）
+ *
+ * 英語学位フォーマット: 1W25AS02-5
+ * - 6文字目が数字でない場合、英語学位プログラムと判定
+ * - 5文字目の学科コード: A=Mathematical Sciences, B=Mechanical Engineering,
+ *   C=Computer Sciences and Communications Engineering, D=Civil and Environmental Engineering
  */
 
 if (!class_exists('StudentIdParserService')) {
@@ -20,6 +25,16 @@ class StudentIdParserService
         '1W' => '基幹理工学部',
         '1X' => '創造理工学部',
         '1Y' => '先進理工学部',
+    ];
+
+    /**
+     * 英語学位プログラムの学科コード（6文字目が数字でない場合に適用）
+     */
+    private const ENGLISH_DEGREE_DEPARTMENT_CODES = [
+        'A' => 'Mathematical Sciences',
+        'B' => 'Mechanical Engineering',
+        'C' => 'Computer Sciences and Communications Engineering',
+        'D' => 'Civil and Environmental Engineering',
     ];
 
     /**
@@ -57,12 +72,47 @@ class StudentIdParserService
 
     /**
      * 基幹理工学部の学系（2025年度以降入学）
+     * 2025年度から学系IVが追加されたが、表記は旧形式（系名なし）で統一する。
      */
     private const KIKAN_GAKUKEI_NEW = [
-        '学系I（数学系）',
-        '学系II（工学系）',
-        '学系III（情報系）',
-        '学系IV（メディア系）',
+        '学系I',
+        '学系II',
+        '学系III',
+        '学系IV',
+    ];
+
+    /**
+     * 基幹理工学部の学系コード（5文字目）→ 学系名マップ
+     * 例: 1W263174-6 → 5文字目「3」→ 学系III
+     */
+    private const KIKAN_GAKUKEI_BY_CODE = [
+        '1' => '学系I',
+        '2' => '学系II',
+        '3' => '学系III',
+        '4' => '学系IV',
+    ];
+
+    /**
+     * 学系名の正規化マップ
+     * 旧表記・新表記・全角ローマ数字などの揺れを統一表記（学系I/II/III/IV）にマッピング
+     */
+    private const GAKUKEI_NORMALIZATION_MAP = [
+        '学系I（数学系）'       => '学系I',
+        '学系II（工学系）'      => '学系II',
+        '学系III（情報系）'     => '学系III',
+        '学系IV（メディア系）'  => '学系IV',
+        '学系Ⅰ（数学系）'       => '学系I',
+        '学系Ⅱ（工学系）'       => '学系II',
+        '学系Ⅲ（情報系）'       => '学系III',
+        '学系Ⅳ（メディア系）'   => '学系IV',
+        '学系Ⅰ'                  => '学系I',
+        '学系Ⅱ'                  => '学系II',
+        '学系Ⅲ'                  => '学系III',
+        '学系Ⅳ'                  => '学系IV',
+        '学系1'                  => '学系I',
+        '学系2'                  => '学系II',
+        '学系3'                  => '学系III',
+        '学系4'                  => '学系IV',
     ];
 
     /**
@@ -95,6 +145,7 @@ class StudentIdParserService
             'department' => null,
             'department_code' => null,
             'needs_department_selection' => false,
+            'is_english_degree' => false,
             'is_valid' => false,
             'error' => null,
         ];
@@ -135,12 +186,37 @@ class StudentIdParserService
         $deptCode = substr($normalizedId, 4, 1);
         $result['department_code'] = $deptCode;
 
+        // 6文字目が数字でない場合は英語学位フォーマット
+        $sixthChar = strlen($normalizedId) > 5 ? substr($normalizedId, 5, 1) : '';
+        $isEnglishDegree = $sixthChar !== '' && !ctype_digit($sixthChar);
+
         // 学部に応じた学科の判定
         switch ($facultyCode) {
             case '1W': // 基幹理工学部
-                // 基幹理工は学科選択が必要
-                $result['needs_department_selection'] = true;
-                $result['is_valid'] = true;
+                if ($isEnglishDegree) {
+                    // 英語学位プログラム: 5文字目で学科を判定
+                    if (isset(self::ENGLISH_DEGREE_DEPARTMENT_CODES[$deptCode])) {
+                        $result['department'] = self::ENGLISH_DEGREE_DEPARTMENT_CODES[$deptCode];
+                        $result['is_english_degree'] = true;
+                        $result['is_valid'] = true;
+                    } else {
+                        $result['error'] = '不明な英語学位学科コードです: ' . $deptCode;
+                    }
+                } else {
+                    // 通常フォーマット: 5文字目（1〜4）が学系番号に対応
+                    // 1年生は学系を自動判定、2年生以降は進振り後の学科を選択させる
+                    $gakukei = self::KIKAN_GAKUKEI_BY_CODE[$deptCode] ?? null;
+                    $isFirstYear = $this->calculateGrade($enrollmentYear) === 1;
+
+                    if ($gakukei !== null && $isFirstYear) {
+                        $result['department'] = $gakukei;
+                        $result['is_valid'] = true;
+                    } else {
+                        // 2年生以降、または学系コードが不明な場合は選択させる
+                        $result['needs_department_selection'] = true;
+                        $result['is_valid'] = true;
+                    }
+                }
                 break;
 
             case '1X': // 創造理工学部
@@ -220,6 +296,23 @@ class StudentIdParserService
     }
 
     /**
+     * 学系名の表記を統一形式（学系I/II/III/IV）に正規化する。
+     * 「学系III（情報系）」「学系Ⅲ」「学系3」などの揺れを吸収する。
+     * 学系以外の文字列はそのまま返す。
+     */
+    public function normalizeGakukei(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return $trimmed;
+        }
+        return self::GAKUKEI_NORMALIZATION_MAP[$trimmed] ?? $trimmed;
+    }
+
+    /**
      * 基幹理工学部の全学科リストを取得
      *
      * @return array 学科名の配列
@@ -271,9 +364,14 @@ class StudentIdParserService
         $normalizedId = mb_convert_kana($studentId, 'as');
         $normalizedId = strtoupper(trim($normalizedId));
 
-        // パターン: 学部コード(2文字) + 年度(2桁) + 学科コード(1文字/数字) + 番号(3-4桁) + ハイフン + チェックデジット(1桁)
-        // 例: 1Y23F158-5, 1W211073-8（4桁の番号や数字の学科コードにも対応）
-        return preg_match('/^1[WXY]\d{2}[A-Z0-9]\d{3,4}-\d$/', $normalizedId) === 1;
+        // 通常フォーマット: 学部コード(2文字) + 年度(2桁) + 学科コード(1文字/数字) + 番号(3-4桁) + ハイフン + チェックデジット(1桁)
+        // 例: 1Y23F158-5, 1W211073-8
+        if (preg_match('/^1[WXY]\d{2}[A-Z0-9]\d{3,4}-\d$/', $normalizedId) === 1) {
+            return true;
+        }
+        // 英語学位フォーマット: 学部コード(2文字) + 年度(2桁) + 学科コード(1文字) + 英字(1文字) + 番号(2桁) + ハイフン + チェックデジット(1桁)
+        // 例: 1W25AS02-5
+        return preg_match('/^1[WXY]\d{2}[A-D][A-Z]\d{2}-\d$/', $normalizedId) === 1;
     }
 
     /**

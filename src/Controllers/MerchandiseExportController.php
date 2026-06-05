@@ -17,7 +17,7 @@ class MerchandiseExportController
 {
     public function __construct()
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
     }
 
     /**

@@ -9,7 +9,7 @@ class MerchandiseController
      */
     public function indexPage(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         $this->render('merchandise/index');
     }
 
@@ -18,7 +18,7 @@ class MerchandiseController
      */
     public function detailPage(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         $merch = Merchandise::findById((int)$params['id']);
         if (!$merch) {
             http_response_code(404);
@@ -32,13 +32,13 @@ class MerchandiseController
 
     public function index(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         Response::success(['merchandise' => Merchandise::findAll()]);
     }
 
     public function show(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         $merch = Merchandise::findById((int)$params['id']);
         if (!$merch) {
             Response::error('商品が見つかりません', 404, 'NOT_FOUND');
@@ -49,7 +49,7 @@ class MerchandiseController
 
     public function store(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         $data = Request::only(['name', 'description', 'price', 'sale_start', 'sale_end', 'is_active', 'sort_order']);
 
         if (empty(trim($data['name'] ?? ''))) {
@@ -63,7 +63,7 @@ class MerchandiseController
 
     public function update(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         $data  = Request::only(['name', 'description', 'price', 'sale_start', 'sale_end', 'is_active', 'sort_order']);
         $merch = Merchandise::update((int)$params['id'], $data);
         if (!$merch) {
@@ -75,7 +75,7 @@ class MerchandiseController
 
     public function destroy(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         Merchandise::delete((int)$params['id']);
         Response::success([]);
     }
@@ -84,7 +84,7 @@ class MerchandiseController
 
     public function saveColors(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         $body   = Request::json();
         $colors = is_array($body['colors'] ?? null) ? $body['colors'] : [];
         Merchandise::saveColors((int)$params['id'], $colors);
@@ -93,7 +93,7 @@ class MerchandiseController
 
     public function saveSizes(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         $body  = Request::json();
         $sizes = is_array($body['sizes'] ?? null) ? $body['sizes'] : [];
         Merchandise::saveSizes((int)$params['id'], $sizes);
@@ -104,13 +104,13 @@ class MerchandiseController
 
     public function orders(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         $status = $_GET['status'] ?? null;
         $orders = MerchandiseOrder::findAll($status);
 
-        // 商品IDで絞り込み
-        if (!empty($_GET['merchandise_id'])) {
-            $mid = (int)$_GET['merchandise_id'];
+        // 商品IDで絞り込み（ルートパラメータ優先、なければクエリパラメータ）
+        $mid = !empty($params['id']) ? (int)$params['id'] : (!empty($_GET['merchandise_id']) ? (int)$_GET['merchandise_id'] : 0);
+        if ($mid > 0) {
             $orders = array_values(array_filter($orders, function ($o) use ($mid) {
                 foreach ($o['items'] as $it) {
                     if ((int)$it['merchandise_id'] === $mid) return true;
@@ -124,7 +124,7 @@ class MerchandiseController
 
     public function showOrder(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         $order = MerchandiseOrder::findById((int)$params['id']);
         if (!$order) {
             Response::error('注文が見つかりません', 404, 'NOT_FOUND');
@@ -135,7 +135,7 @@ class MerchandiseController
 
     public function togglePaid(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         $order = MerchandiseOrder::togglePaid((int)$params['id']);
         if (!$order) {
             Response::error('注文が見つかりません', 404, 'NOT_FOUND');
@@ -146,7 +146,7 @@ class MerchandiseController
 
     public function updateOrderStatus(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         $status = Request::get('status') ?? '';
         $order  = MerchandiseOrder::updateStatus((int)$params['id'], $status);
         if (!$order) {
@@ -158,14 +158,14 @@ class MerchandiseController
 
     public function destroyOrder(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         MerchandiseOrder::delete((int)$params['id']);
         Response::success([]);
     }
 
     public function summary(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         Response::success(['summary' => MerchandiseOrder::summaryByMerchandise((int)$params['id'])]);
     }
 
@@ -173,20 +173,20 @@ class MerchandiseController
 
     public function pendingOrders(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         Response::success(['orders' => MerchandiseOrder::findPending()]);
     }
 
     public function matchAllPending(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         $result = MerchandiseOrder::matchAllPending();
         Response::success($result);
     }
 
     public function linkOrderToMember(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         $memberId = (int)(Request::get('member_id') ?? 0);
         if ($memberId <= 0) {
             Response::error('会員IDが不正です', 400, 'VALIDATION_ERROR');
@@ -204,21 +204,24 @@ class MerchandiseController
 
     public function getTokens(array $params): void
     {
-        Auth::requireAuth();
-        Response::success(['tokens' => MerchandiseToken::findAll()]);
+        Auth::requirePermission('merchandise');
+        $mid    = (int)($params['id'] ?? 0);
+        $tokens = MerchandiseToken::findByMerchandise($mid);
+        Response::success(['tokens' => $tokens]);
     }
 
     public function generateToken(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
+        $mid   = (int)($params['id'] ?? 0);
         $label = Request::get('label');
-        $token = MerchandiseToken::generate($label);
+        $token = MerchandiseToken::generate($label, 90, $mid);
         Response::success($token);
     }
 
     public function destroyToken(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
         MerchandiseToken::delete((int)$params['id']);
         Response::success([]);
     }
@@ -227,7 +230,7 @@ class MerchandiseController
 
     public function uploadImage(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('merchandise');
 
         if (empty($_FILES['image'])) {
             Response::error('ファイルが選択されていません', 400, 'NO_FILE');

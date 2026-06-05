@@ -23,6 +23,32 @@ class Participant
     }
 
     /**
+     * 指定タイムスロット（time_slot）に在席している参加者IDの配列を返す。
+     * participant_slots に依存せず、各参加者の join/leave から直接判定する
+     * （コマを後から追加した場合でも正しくカウントできる）。
+     */
+    public function getAttendingParticipantIds(int $timeSlotId): array
+    {
+        $slot = $this->db->fetch("SELECT * FROM time_slots WHERE id = ?", [$timeSlotId]);
+        if (!$slot) {
+            return [];
+        }
+
+        $participants = $this->db->fetchAll(
+            "SELECT * FROM participants WHERE camp_id = ?",
+            [$slot['camp_id']]
+        );
+
+        $ids = [];
+        foreach ($participants as $p) {
+            if ($this->checkSlotAttendance($p, $slot)) {
+                $ids[] = (int)$p['id'];
+            }
+        }
+        return $ids;
+    }
+
+    /**
      * ID指定で取得
      */
     public function find(int $id): ?array

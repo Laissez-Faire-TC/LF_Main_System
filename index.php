@@ -56,6 +56,17 @@ $router->post('/api/auth/login', 'AuthController@login');
 $router->post('/api/auth/logout', 'AuthController@logout');
 $router->get('/api/auth/check', 'AuthController@check');
 
+// 幹部Googleログイン
+$router->get('/admin/oauth/{provider}/start', 'AdminPortalController@oauthStart');
+$router->get('/admin/oauth/{provider}/callback', 'AdminPortalController@oauthCallback');
+
+// 幹部・権限管理（Admin限定）
+$router->get('/admin-users', 'AdminUserController@indexPage');
+$router->get('/api/admin-users', 'AdminUserController@index');
+$router->post('/api/admin-users', 'AdminUserController@store');
+$router->put('/api/admin-users/{id}', 'AdminUserController@update');
+$router->delete('/api/admin-users/{id}', 'AdminUserController@destroy');
+
 // 合宿ルート
 $router->get('/api/camps', 'CampController@index');
 $router->post('/api/camps', 'CampController@store');
@@ -133,8 +144,26 @@ $router->get('/api/events/{id}/applications', 'EventController@getApplications')
 $router->post('/api/events/{id}/expenses', 'EventController@storeExpense');
 $router->get('/api/events/{id}/calculate', 'EventController@calculate');
 $router->post('/api/event-applications/{id}/cancel', 'EventController@cancelApplication');
+
+// 班決め（グループ分け）API
+$router->get('/api/events/{id}/teams', 'EventController@getTeams');
+$router->post('/api/events/{id}/teams', 'EventController@saveTeams');
+$router->post('/api/events/{id}/constraints', 'EventController@addTeamConstraint');
+$router->delete('/api/events/{id}/constraints/{cid}', 'EventController@deleteTeamConstraint');
+
 $router->put('/api/event-expenses/{id}', 'EventController@updateExpense');
 $router->delete('/api/event-expenses/{id}', 'EventController@destroyExpense');
+
+// 企画申込URLトークン管理API（固定パスを {id} ルートより前に登録）
+$router->get('/api/events/{id}/token', 'EventController@getToken');
+$router->post('/api/events/{id}/token', 'EventController@generateToken');
+$router->delete('/api/events/{id}/token', 'EventController@deleteToken');
+
+// 企画公開申込ページ（固定パスを先に登録）
+$router->get('/apply/event/{token}/confirm', 'EventApplicationController@confirm');
+$router->get('/apply/event/{token}/complete', 'EventApplicationController@complete');
+$router->post('/api/apply/event/{token}', 'EventApplicationController@apply');
+$router->get('/apply/event/{token}', 'EventApplicationController@form');
 
 // 企画管理ページルート
 $router->get('/events', 'EventController@indexPage');
@@ -165,6 +194,7 @@ $router->put('/api/members/{id}', 'MemberController@update');
 $router->delete('/api/members/{id}', 'MemberController@destroy');
 $router->post('/api/members/{id}/approve', 'MemberController@approve');
 $router->post('/api/members/{id}/reject', 'MemberController@reject');
+$router->delete('/api/members/{id}/oauth', 'MemberController@unlinkOauth');
 
 // 年度管理ルート
 $router->get('/api/academic-years', 'AcademicYearController@index');
@@ -198,6 +228,11 @@ $router->get('/member/login', 'MemberPortalController@loginPage');
 $router->post('/api/member/login', 'MemberPortalController@login');
 $router->get('/member/home', 'MemberPortalController@home');
 $router->post('/api/member/logout', 'MemberPortalController@logout');
+
+// 会員OAuth2.0（希望者のみ・Google/LINE連携ログイン）
+$router->get('/member/oauth/{provider}/start', 'MemberPortalController@oauthStart');
+$router->get('/member/oauth/{provider}/callback', 'MemberPortalController@oauthCallback');
+$router->post('/api/member/oauth/{provider}/unlink', 'MemberPortalController@oauthUnlink');
 
 // 会員向け企画申し込みルート
 $router->post('/api/member/events/{id}/apply', 'MemberPortalController@applyEvent');
@@ -272,6 +307,22 @@ $router->put('/api/camps/{id}/booklet', 'CampBookletController@upsert');
 $router->post('/api/camps/{id}/booklet/token', 'CampBookletController@generateToken');
 $router->get('/api/camps/{id}/booklet/import-schedule', 'CampBookletController@importSchedule');
 $router->get('/api/camps/{id}/booklet/participants', 'CampBookletController@participants');
+
+// テニス班分けルート（団体戦/紅白戦/対戦表）
+$router->get('/api/camps/{id}/tennis', 'CampTennisController@show');
+$router->put('/api/camps/{id}/tennis', 'CampTennisController@upsert');
+
+// 企画班分けルート（複数企画・自動振り分け・制約）
+$router->get('/api/camps/{id}/plans', 'CampPlanController@index');
+$router->post('/api/camps/{id}/plans', 'CampPlanController@store');
+// 固定パスを {id} ルートより前に登録
+$router->get('/api/plans/{id}', 'CampPlanController@show');
+$router->post('/api/plans/{id}/resync', 'CampPlanController@resyncMembers');
+$router->post('/api/plans/{id}/teams', 'CampPlanController@saveTeams');
+$router->post('/api/plans/{id}/constraints', 'CampPlanController@addConstraint');
+$router->delete('/api/plans/{id}/constraints/{cid}', 'CampPlanController@deleteConstraint');
+$router->put('/api/plans/{id}', 'CampPlanController@update');
+$router->delete('/api/plans/{id}', 'CampPlanController@destroy');
 
 // 合宿しおり閲覧（会員ログイン済み）
 $router->get('/member/camp/{id}/booklet', 'MemberPortalController@booklet');
@@ -375,8 +426,8 @@ $router->post('/api/merchandise/orders/{id}/link-member', 'MerchandiseController
 
 // 商品 CRUD（固定パスを先に登録）
 $router->post('/api/merchandise/upload-image', 'MerchandiseController@uploadImage');
-$router->get('/api/merchandise/tokens', 'MerchandiseController@getTokens');
-$router->post('/api/merchandise/tokens', 'MerchandiseController@generateToken');
+$router->get('/api/merchandise/{id}/tokens', 'MerchandiseController@getTokens');
+$router->post('/api/merchandise/{id}/tokens', 'MerchandiseController@generateToken');
 $router->delete('/api/merchandise/tokens/{id}', 'MerchandiseController@destroyToken');
 $router->post('/api/merchandise/orders/{id}/toggle-paid', 'MerchandiseController@togglePaid');
 $router->put('/api/merchandise/orders/{id}/status', 'MerchandiseController@updateOrderStatus');
@@ -404,6 +455,24 @@ $router->post('/api/store/pending/checkout', 'MerchandiseShopController@pendingC
 // 物販ショップ（公開URL）
 $router->get('/store/{token}', 'MerchandiseShopController@publicShop');
 $router->post('/api/store/{token}/checkout', 'MerchandiseShopController@publicCheckout');
+
+// ===== 目安箱 =====
+// 幹部側 管理ページ（固定パスを {id} より前に登録）
+$router->get('/suggestions', 'SuggestionController@adminIndex');
+$router->get('/api/suggestion-categories', 'SuggestionController@listCategories');
+$router->post('/api/suggestion-categories', 'SuggestionController@storeCategory');
+$router->put('/api/suggestion-categories/{id}', 'SuggestionController@updateCategory');
+$router->delete('/api/suggestion-categories/{id}', 'SuggestionController@destroyCategory');
+$router->post('/api/suggestions/{id}/replies', 'SuggestionController@adminReply');
+$router->post('/api/suggestions/{id}/status', 'SuggestionController@setStatus');
+$router->delete('/api/suggestions/{id}', 'SuggestionController@destroy');
+$router->get('/suggestions/{id}', 'SuggestionController@adminShow');
+
+// 会員側 目安箱
+$router->get('/member/suggestions', 'SuggestionController@memberIndex');
+$router->post('/api/member/suggestions', 'SuggestionController@memberStore');
+$router->post('/api/member/suggestions/{id}/replies', 'SuggestionController@memberReply');
+$router->get('/member/suggestions/{id}', 'SuggestionController@memberShow');
 
 // デバッグ用（確認後削除）
 $router->get('/debug-member', 'MemberPortalController@debugMember');

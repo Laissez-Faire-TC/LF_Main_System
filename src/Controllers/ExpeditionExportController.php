@@ -17,7 +17,7 @@ class ExpeditionExportController
 {
     public function __construct()
     {
-        Auth::requireAuth();
+        Auth::requirePermission('expeditions');
     }
 
     /**
@@ -138,16 +138,16 @@ class ExpeditionExportController
         array $participants
     ): void {
         // タイトル
-        $sheet->mergeCells('A1:H1');
+        $sheet->mergeCells('A1:J1');
         $sheet->setCellValue('A1', '参加者一覧　' . $expedition['name']);
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(13);
 
         // ヘッダー
-        $cols = ['A' => 'No.', 'B' => '氏名', 'C' => 'フリガナ', 'D' => '学年性別', 'E' => '前泊', 'F' => '昼食', 'G' => 'アレルギー', 'H' => '住所'];
+        $cols = ['A' => 'No.', 'B' => '氏名', 'C' => 'フリガナ', 'D' => '学年性別', 'E' => '前泊', 'F' => '昼食', 'G' => '金曜終了時限', 'H' => 'ドライバー', 'I' => 'アレルギー', 'J' => '住所'];
         foreach ($cols as $col => $label) {
             $sheet->setCellValue($col . '2', $label);
         }
-        $this->headerStyle($sheet, 'A2:H2');
+        $this->headerStyle($sheet, 'A2:J2');
 
         // 列幅
         $sheet->getColumnDimension('A')->setWidth(5);
@@ -156,8 +156,10 @@ class ExpeditionExportController
         $sheet->getColumnDimension('D')->setWidth(10);
         $sheet->getColumnDimension('E')->setWidth(7);
         $sheet->getColumnDimension('F')->setWidth(7);
-        $sheet->getColumnDimension('G')->setWidth(35);
-        $sheet->getColumnDimension('H')->setWidth(40);
+        $sheet->getColumnDimension('G')->setWidth(13);
+        $sheet->getColumnDimension('H')->setWidth(14);
+        $sheet->getColumnDimension('I')->setWidth(35);
+        $sheet->getColumnDimension('J')->setWidth(40);
 
         // データ行
         $row = 3;
@@ -168,19 +170,21 @@ class ExpeditionExportController
             $sheet->setCellValue('D' . $row, $this->gradeGenderLabel($p['grade'] ?? null, $p['gender'] ?? null));
             $sheet->setCellValue('E' . $row, $p['pre_night'] ? '○' : '');
             $sheet->setCellValue('F' . $row, $p['lunch']     ? '○' : '');
-            $sheet->setCellValue('G' . $row, $p['allergy']   ?? '');
+            $sheet->setCellValue('G' . $row, $this->fridayClassLabel($p['friday_last_class'] ?? null));
+            $sheet->setCellValue('H' . $row, $this->driverLabel($p['driver_type'] ?? null, (int)($p['can_book_car'] ?? 0) === 1));
+            $sheet->setCellValue('I' . $row, $p['allergy']   ?? '');
             if (!empty($p['allergy'])) {
-                $sheet->getStyle('G' . $row)->getFont()->setColor(new Color('FFCC0000'));
+                $sheet->getStyle('I' . $row)->getFont()->setColor(new Color('FFCC0000'));
             }
-            $sheet->getStyle('G' . $row)->getAlignment()->setWrapText(true);
-            $sheet->setCellValue('H' . $row, $p['address'] ?? '');
-            $sheet->getStyle('H' . $row)->getAlignment()->setWrapText(true);
+            $sheet->getStyle('I' . $row)->getAlignment()->setWrapText(true);
+            $sheet->setCellValue('J' . $row, $p['address'] ?? '');
+            $sheet->getStyle('J' . $row)->getAlignment()->setWrapText(true);
             $row++;
         }
 
         if ($row > 3) {
-            $this->borderStyle($sheet, 'A2:H' . ($row - 1));
-            $sheet->getStyle('A3:F' . ($row - 1))->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            $this->borderStyle($sheet, 'A2:J' . ($row - 1));
+            $sheet->getStyle('A3:H' . ($row - 1))->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
         }
 
         // 合計行
@@ -190,8 +194,36 @@ class ExpeditionExportController
         $lunchCount = count(array_filter($participants, fn($p) => $p['lunch']));
         $sheet->setCellValue('E' . $row, $preCount   . '名');
         $sheet->setCellValue('F' . $row, $lunchCount . '名');
-        $sheet->getStyle('A' . $row . ':H' . $row)->getFont()->setBold(true);
-        $sheet->getStyle('A' . $row . ':H' . $row)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FFF2CC');
+        $sheet->getStyle('A' . $row . ':J' . $row)->getFont()->setBold(true);
+        $sheet->getStyle('A' . $row . ':J' . $row)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setRGB('FFF2CC');
+    }
+
+    /**
+     * 金曜の授業終了時限を表示用ラベルに変換する。
+     * 0/null → 授業なし、1〜6 → 「○限」。
+     */
+    private function fridayClassLabel($value): string
+    {
+        if ($value === null || $value === '') return '';
+        $v = (int)$value;
+        return $v === 0 ? '授業なし' : "{$v}限";
+    }
+
+    /**
+     * ドライバー種別を表示用ラベルに変換する。
+     * driver → ドライバー、sub_driver → サブドライバー、それ以外 → 空。
+     * 車を予約する人（can_book_car）は「（車あり）」を付記する。
+     */
+    private function driverLabel(?string $driverType, bool $canBookCar): string
+    {
+        $label = '';
+        if ($driverType === 'driver')          $label = 'ドライバー';
+        elseif ($driverType === 'sub_driver')  $label = 'サブドライバー';
+
+        if ($canBookCar) {
+            $label = ($label === '' ? '車あり' : $label . '（車あり）');
+        }
+        return $label;
     }
 
     /**
@@ -796,9 +828,9 @@ class ExpeditionExportController
         $sheet->getColumnDimension('D')->setWidth(6);   // 性別
         $sheet->getColumnDimension('E')->setWidth(6);   // 年齢
         $sheet->getColumnDimension('F')->setWidth(14);  // 生年月日
-        $sheet->getColumnDimension('G')->setWidth(30);  // 住所
+        $sheet->getColumnDimension('G')->setWidth(55);  // 住所
         $sheet->getColumnDimension('H')->setWidth(16);  // 電話番号
-        $sheet->getColumnDimension('I')->setWidth(16);  // 緊急連絡先
+        $sheet->getColumnDimension('I')->setWidth(18);  // 緊急連絡先
 
         // タイトル行
         $row = 1;

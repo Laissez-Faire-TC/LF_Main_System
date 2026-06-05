@@ -7,7 +7,7 @@ class EnrollmentManagementController
 {
     public function __construct()
     {
-        Auth::requireAuth();
+        Auth::requirePermission('enrollment');
     }
 
     /**

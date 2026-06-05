@@ -8,7 +8,7 @@ class SystemSettingsController
 
     public function __construct()
     {
-        Auth::requireAuth();
+        Auth::requirePermission('settings');
         $this->settings = new HpSettings();
     }
 

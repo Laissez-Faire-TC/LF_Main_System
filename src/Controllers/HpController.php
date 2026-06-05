@@ -25,7 +25,7 @@ class HpController
      */
     public function indexPage(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('hp');
 
         $schedule = $this->scheduleModel->all();
         foreach ($schedule as &$s) {
@@ -79,7 +79,7 @@ class HpController
      */
     public function updateSettings(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('hp');
 
         $keys = ['about_description', 'about_info', 'about_achievements', 'contact_instagram', 'contact_twitter', 'quick_news'];
         foreach ($keys as $key) {
@@ -98,7 +98,7 @@ class HpController
      */
     public function storeNews(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('hp');
 
         $errors = Request::validate([
             'title'     => 'required',
@@ -128,7 +128,7 @@ class HpController
      */
     public function updateNews(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('hp');
 
         $id   = (int)$params['id'];
         $item = $this->newsModel->find($id);
@@ -156,7 +156,7 @@ class HpController
      */
     public function destroyNews(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('hp');
 
         $id = (int)$params['id'];
         if (!$this->newsModel->find($id)) {
@@ -174,7 +174,7 @@ class HpController
      */
     public function updateSchedule(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('hp');
 
         $id  = (int)$params['id'];
         $row = $this->scheduleModel->find($id);
@@ -207,7 +207,7 @@ class HpController
      */
     public function uploadImage(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('hp');
 
         if (empty($_FILES['image'])) {
             Response::error('ファイルが選択されていません', 400, 'NO_FILE');

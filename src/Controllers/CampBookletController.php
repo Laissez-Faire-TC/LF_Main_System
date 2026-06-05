@@ -8,7 +8,7 @@ class CampBookletController
 
     public function __construct()
     {
-        Auth::requireAuth();
+        Auth::requirePermission('camps');
         $this->model = new CampBooklet();
     }
 
@@ -182,27 +182,49 @@ class CampBookletController
             return;
         }
 
-        $participantModel = new Participant();
-        $all = $participantModel->getByCampId($campId);
+        Response::success(['participants' => self::loadEnrichedParticipants($campId)]);
+    }
+
+    /**
+     * 合宿参加者を学科（学部）付きで取得。
+     * 学科は participants → camp_applications → members 経由で補完。
+     * テニス班分け・企画班分けタブからも利用する共通処理。
+     */
+    public static function loadEnrichedParticipants(int $campId): array
+    {
+        $db = Database::getInstance();
+        $all = $db->fetchAll(
+            "SELECT p.id, p.name, p.grade, p.gender,
+                    m.faculty, m.department, m.name_kana
+             FROM participants p
+             LEFT JOIN camp_applications ca ON ca.participant_id = p.id
+             LEFT JOIN members m ON m.id = ca.member_id
+             WHERE p.camp_id = ?
+             GROUP BY p.id",
+            [$campId]
+        );
 
         $gradeLabels = [0 => 'OB/OG', 1 => '1年', 2 => '2年', 3 => '3年', 4 => '4年', 5 => '5年'];
 
         $result = array_map(fn($p) => [
-            'id'     => $p['id'],
-            'name'   => $p['name'],
-            'grade'  => $p['grade'],
-            'gender' => $p['gender'],
-            'label'  => ($gradeLabels[$p['grade']] ?? '') . ($p['gender'] === 'female' ? '女' : '男') . ' ' . $p['name'],
+            'id'         => (int)$p['id'],
+            'name'       => $p['name'],
+            'grade'      => $p['grade'] !== null ? (int)$p['grade'] : null,
+            'gender'     => $p['gender'],
+            'faculty'    => $p['faculty'] ?? null,
+            'department' => $p['department'] ?? null,
+            'name_kana'  => $p['name_kana'] ?? null,
+            'label'      => ($gradeLabels[$p['grade']] ?? '') . ($p['gender'] === 'female' ? '女' : '男') . ' ' . $p['name'],
         ], $all);
 
         // 学年→性別→名前 でソート
         usort($result, function($a, $b) {
-            if ($a['grade'] !== $b['grade']) return $a['grade'] <=> $b['grade'];
+            if ($a['grade'] !== $b['grade']) return ($a['grade'] ?? 99) <=> ($b['grade'] ?? 99);
             if ($a['gender'] !== $b['gender']) return strcmp($a['gender'] ?? '', $b['gender'] ?? '');
             return strcmp($a['name'], $b['name']);
         });
 
-        Response::success(['participants' => $result]);
+        return $result;
     }
 
     /**

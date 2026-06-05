@@ -218,15 +218,15 @@
             <thead class="table-light">
                 <tr>
                     <th style="white-space:nowrap">名前</th>
-                    <th class="col-grade" style="white-space:nowrap">学年</th>
+                    <th class="col-grade" style="white-space:nowrap; width:48px; min-width:48px;">学年</th>
                     <th class="col-faculty" style="white-space:nowrap">学部</th>
-                    <th class="col-department" style="white-space:nowrap">学科/学系</th>
-                    <th class="col-student_id" style="white-space:nowrap">学籍番号</th>
+                    <th class="col-department" style="white-space:nowrap; width:180px; min-width:180px; max-width:180px;">学科/学系</th>
+                    <th class="col-student_id" style="white-space:nowrap; min-width:9ch;">学籍番号</th>
                     <th class="col-status" style="white-space:nowrap">ステータス</th>
                     <th class="col-phone" style="white-space:nowrap">電話番号</th>
                     <th class="col-email" style="white-space:nowrap">メール</th>
                     <th class="col-line_name" style="white-space:nowrap">LINE名</th>
-                    <th class="col-address" style="white-space:nowrap">住所</th>
+                    <th class="col-address" style="min-width:260px;">住所</th>
                     <th class="col-emergency_contact" style="white-space:nowrap">緊急連絡先</th>
                     <th class="col-birthdate" style="white-space:nowrap">生年月日</th>
                     <th class="col-allergy" style="white-space:nowrap">アレルギー</th>
@@ -389,6 +389,19 @@
                                 <option value="ob_og">OB/OG</option>
                                 <option value="withdrawn">退会</option>
                             </select>
+                        </div>
+                    </div>
+
+                    <!-- OAuth連携状況（救済用・編集時のみ表示） -->
+                    <div class="row mt-3" id="oauthRow" style="display:none;">
+                        <div class="col-12">
+                            <label class="form-label">ログイン方法（外部アカウント連携）</label>
+                            <div class="border rounded p-2 bg-light d-flex align-items-center justify-content-between flex-wrap gap-2">
+                                <span id="oauthStatusText" class="small"></span>
+                                <button type="button" class="btn btn-sm btn-outline-warning" id="oauthUnlinkBtn"
+                                        onclick="adminUnlinkOauth()" style="display:none;">連携を解除（学籍番号ログインに戻す）</button>
+                            </div>
+                            <div class="form-text">連携中の会員は学籍番号でログインできません。本人がログインできなくなった場合はここで解除してください。</div>
                         </div>
                     </div>
                 </form>
@@ -671,7 +684,7 @@ let sortConfig = {
 const departmentOptions = {
     '基幹理工学部': {
         gakukei_old: ['学系I', '学系II', '学系III'],
-        gakukei_new: ['学系I（数学系）', '学系II（工学系）', '学系III（情報系）', '学系IV（メディア系）'],
+        gakukei_new: ['学系I', '学系II', '学系III', '学系IV'],
         departments: ['数学科', '応用数理学科', '機械科学・航空宇宙学科', '電子物理システム学科', '情報理工学科', '情報通信学科', '表現工学科', 'その他（英語学位等）']
     },
     '創造理工学部': {
@@ -906,15 +919,15 @@ function renderMembers(members) {
                 <strong>${escapeHtml(m.name_kanji)}</strong>
                 <br><small class="text-muted">${escapeHtml(m.name_kana)}</small>
             </td>
-            <td class="col-grade">${formatGrade(m.grade, m.gender, m.enrollment_year)}</td>
+            <td class="col-grade" style="white-space:nowrap">${formatGrade(m.grade, m.gender, m.enrollment_year)}</td>
             <td class="col-faculty" style="white-space:nowrap">${escapeHtml(m.faculty)}</td>
-            <td class="col-department" style="white-space:nowrap">${escapeHtml(m.department)}${m.department_not_set ? '<span class="badge bg-warning ms-1">要選択</span>' : ''}</td>
-            <td class="col-student_id"><code>${escapeHtml(m.student_id)}</code></td>
+            <td class="col-department" style="white-space:nowrap; max-width:180px; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(m.department)}">${escapeHtml(m.department)}${m.department_not_set ? '<span class="badge bg-warning ms-1">要選択</span>' : ''}</td>
+            <td class="col-student_id" style="white-space:nowrap"><code>${escapeHtml(m.student_id)}</code></td>
             <td class="col-status">${formatStatus(m.status, m.grade, m.gender, m.enrollment_year)}</td>
             <td class="col-phone" style="white-space:nowrap">${escapeHtml(m.phone || '')}</td>
             <td class="col-email">${escapeHtml(m.email || '')}</td>
             <td class="col-line_name">${escapeHtml(m.line_name || '')}</td>
-            <td class="col-address">${escapeHtml(m.address || '')}</td>
+            <td class="col-address" style="min-width:260px; white-space:normal; word-break:break-word;">${escapeHtml(m.address || '')}</td>
             <td class="col-emergency_contact" style="white-space:nowrap">${escapeHtml(m.emergency_contact || '')}</td>
             <td class="col-birthdate" style="white-space:nowrap">${escapeHtml(m.birthdate || '')}</td>
             <td class="col-allergy">${escapeHtml(m.allergy || '')}</td>
@@ -1115,7 +1128,26 @@ function showCreateModal() {
     document.getElementById('status').value = 'active';
     document.getElementById('snsAllowed').checked = true;
     document.getElementById('studentIdParseResult').style.display = 'none';
+    document.getElementById('oauthRow').style.display = 'none';
     memberModal.show();
+}
+
+async function adminUnlinkOauth() {
+    const id = document.getElementById('memberId').value;
+    if (!id) return;
+    if (!confirm('この会員の外部アカウント連携をすべて解除しますか？\n解除すると、その会員は学籍番号でログインできるようになります。')) return;
+    try {
+        const res  = await fetch(`/index.php?route=api/members/${id}/oauth`, { method: 'DELETE' });
+        const json = await res.json();
+        if (json.success) {
+            alert(json.message || '連携を解除しました');
+            editMember(id); // 表示を更新
+        } else {
+            alert(json.error?.message || '解除に失敗しました');
+        }
+    } catch (e) {
+        alert('通信エラーが発生しました');
+    }
 }
 
 async function editMember(id) {
@@ -1161,6 +1193,22 @@ async function editMember(id) {
             document.getElementById('status').value = m.status;
             document.getElementById('deleteMemberBtn').style.display = 'block';
             document.getElementById('studentIdParseResult').style.display = 'none';
+
+            // OAuth連携状況の表示
+            const oauthRow = document.getElementById('oauthRow');
+            const providers = m.oauth_providers || [];
+            const labelMap = { google: 'Google', line: 'LINE' };
+            oauthRow.style.display = 'block';
+            if (providers.length > 0) {
+                const names = providers.map(p => labelMap[p] || p).join('・');
+                document.getElementById('oauthStatusText').innerHTML =
+                    '<span class="badge bg-success">連携中</span> ' + names + '（学籍番号ログイン不可）';
+                document.getElementById('oauthUnlinkBtn').style.display = 'inline-block';
+            } else {
+                document.getElementById('oauthStatusText').textContent = '連携なし（学籍番号でログイン）';
+                document.getElementById('oauthUnlinkBtn').style.display = 'none';
+            }
+
             memberModal.show();
         }
     } catch (err) {

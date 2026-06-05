@@ -32,11 +32,15 @@ class Router
         // パスパラメータを正規表現に変換
         // {id} -> (\d+) 数値のみ
         // {token} -> ([a-zA-Z0-9]+) 英数字
+        // {provider} -> ([a-z]+) 英小文字（OAuthプロバイダ名: google/line）
         $pattern = preg_replace_callback('/\{(\w+)\}/', function($matches) {
             $paramName = $matches[1];
-            // tokenという名前のパラメータは英数字、それ以外は数値のみ
+            // tokenという名前のパラメータは英数字、providerは英小文字、それ以外は数値のみ
             if ($paramName === 'token') {
                 return '(?P<' . $paramName . '>[a-zA-Z0-9]+)';
+            }
+            if ($paramName === 'provider') {
+                return '(?P<' . $paramName . '>[a-z]+)';
             }
             return '(?P<' . $paramName . '>\d+)';
         }, $path);

@@ -440,6 +440,18 @@ async function submitExpense(expeditionId) {
 </div>
 <?php endif; ?>
 
+<div class="card mb-3 border-danger">
+    <div class="card-body d-flex justify-content-between align-items-center py-3">
+        <div>
+            <i class="bi bi-inbox text-danger"></i>
+            <span class="ms-2 small">目安箱 — 要望・質問・相談を幹部に届ける</span>
+        </div>
+        <a href="/member/suggestions" class="btn btn-outline-danger btn-sm">
+            目安箱へ <i class="bi bi-chevron-right"></i>
+        </a>
+    </div>
+</div>
+
 <div class="card mb-3">
     <div class="card-body d-flex justify-content-between align-items-center py-3">
         <div>

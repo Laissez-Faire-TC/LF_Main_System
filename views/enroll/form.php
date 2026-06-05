@@ -407,10 +407,10 @@ function showKikanGakukeiSelection(enrollmentYear) {
         alertText.textContent = '基幹理工学部の場合は学系を選択してください';
         if (enrollmentYear >= 2025) {
             options = [
-                '学系I（数学系）',
-                '学系II（工学系）',
-                '学系III（情報系）',
-                '学系IV（メディア系）'
+                '学系I',
+                '学系II',
+                '学系III',
+                '学系IV'
             ];
         } else {
             options = [

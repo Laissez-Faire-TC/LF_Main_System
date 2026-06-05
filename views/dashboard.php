@@ -143,6 +143,7 @@ function updateBadge() {
 <!-- メイン機能 -->
 <h6 class="text-uppercase text-muted fw-bold mb-3 small">管理機能</h6>
 <div class="row g-3 mb-4">
+    <?php if (Auth::can('camps')): ?>
     <div class="col-md-4 col-sm-6">
         <a href="/camps" class="dashboard-card card shadow-sm h-100 text-decoration-none">
             <div class="card-body d-flex align-items-center gap-3 p-4">
@@ -154,6 +155,8 @@ function updateBadge() {
             </div>
         </a>
     </div>
+    <?php endif; ?>
+    <?php if (Auth::can('expeditions')): ?>
     <div class="col-md-4 col-sm-6">
         <a href="/expeditions" class="dashboard-card card shadow-sm h-100 text-decoration-none">
             <div class="card-body d-flex align-items-center gap-3 p-4">
@@ -165,6 +168,8 @@ function updateBadge() {
             </div>
         </a>
     </div>
+    <?php endif; ?>
+    <?php if (Auth::can('events')): ?>
     <div class="col-md-4 col-sm-6">
         <a href="/events" class="dashboard-card card shadow-sm h-100 text-decoration-none">
             <div class="card-body d-flex align-items-center gap-3 p-4">
@@ -176,6 +181,8 @@ function updateBadge() {
             </div>
         </a>
     </div>
+    <?php endif; ?>
+    <?php if (Auth::can('merchandise')): ?>
     <div class="col-md-4 col-sm-6">
         <a href="/merchandise" class="dashboard-card card shadow-sm h-100 text-decoration-none">
             <div class="card-body d-flex align-items-center gap-3 p-4">
@@ -187,6 +194,21 @@ function updateBadge() {
             </div>
         </a>
     </div>
+    <?php endif; ?>
+    <?php if (Auth::can('suggestions')): ?>
+    <div class="col-md-4 col-sm-6">
+        <a href="/suggestions" class="dashboard-card card shadow-sm h-100 text-decoration-none">
+            <div class="card-body d-flex align-items-center gap-3 p-4">
+                <div class="dashboard-icon text-danger"><i class="bi bi-inbox"></i></div>
+                <div>
+                    <h5 class="mb-1">目安箱</h5>
+                    <small class="text-muted">会員からの要望・質問・相談の確認と返信</small>
+                </div>
+            </div>
+        </a>
+    </div>
+    <?php endif; ?>
+    <?php if (Auth::can('hp')): ?>
     <div class="col-md-4 col-sm-6">
         <a href="/hp" class="dashboard-card card shadow-sm h-100 text-decoration-none">
             <div class="card-body d-flex align-items-center gap-3 p-4">
@@ -198,6 +220,8 @@ function updateBadge() {
             </div>
         </a>
     </div>
+    <?php endif; ?>
+    <?php if (Auth::can('members')): ?>
     <div class="col-md-4 col-sm-6">
         <a href="/members" class="dashboard-card card shadow-sm h-100 text-decoration-none">
             <div class="card-body d-flex align-items-center gap-3 p-4">
@@ -209,6 +233,8 @@ function updateBadge() {
             </div>
         </a>
     </div>
+    <?php endif; ?>
+    <?php if (Auth::can('enrollment')): ?>
     <div class="col-md-4 col-sm-6">
         <a href="/enrollment-management" class="dashboard-card card shadow-sm h-100 text-decoration-none">
             <div class="card-body d-flex align-items-center gap-3 p-4">
@@ -220,6 +246,8 @@ function updateBadge() {
             </div>
         </a>
     </div>
+    <?php endif; ?>
+    <?php if (Auth::can('academic')): ?>
     <div class="col-md-4 col-sm-6">
         <a href="/academic-years" class="dashboard-card card shadow-sm h-100 text-decoration-none">
             <div class="card-body d-flex align-items-center gap-3 p-4">
@@ -231,6 +259,8 @@ function updateBadge() {
             </div>
         </a>
     </div>
+    <?php endif; ?>
+    <?php if (Auth::can('camps')): ?>
     <div class="col-md-4 col-sm-6">
         <a href="/pdf/upload" class="dashboard-card card shadow-sm h-100 text-decoration-none">
             <div class="card-body d-flex align-items-center gap-3 p-4">
@@ -242,6 +272,8 @@ function updateBadge() {
             </div>
         </a>
     </div>
+    <?php endif; ?>
+    <?php if (Auth::can('settings')): ?>
     <div class="col-md-4 col-sm-6">
         <a href="/settings" class="dashboard-card card shadow-sm h-100 text-decoration-none">
             <div class="card-body d-flex align-items-center gap-3 p-4">
@@ -253,6 +285,20 @@ function updateBadge() {
             </div>
         </a>
     </div>
+    <?php endif; ?>
+    <?php if (Auth::isAdmin()): ?>
+    <div class="col-md-4 col-sm-6">
+        <a href="/admin-users" class="dashboard-card card shadow-sm h-100 text-decoration-none">
+            <div class="card-body d-flex align-items-center gap-3 p-4">
+                <div class="dashboard-icon text-danger"><i class="bi bi-shield-lock"></i></div>
+                <div>
+                    <h5 class="mb-1">幹部・権限管理</h5>
+                    <small class="text-muted">Googleログイン許可・幹部ごとの権限設定</small>
+                </div>
+            </div>
+        </a>
+    </div>
+    <?php endif; ?>
     <div class="col-md-4 col-sm-6">
         <a href="/guide" class="dashboard-card card shadow-sm h-100 text-decoration-none">
             <div class="card-body d-flex align-items-center gap-3 p-4">

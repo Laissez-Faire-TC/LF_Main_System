@@ -10,7 +10,7 @@ class ExpeditionBookletController
      */
     public function getBooklet(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('expeditions');
 
         $booklet = ExpeditionBooklet::findByExpedition((int)$params['id']);
         if (!$booklet) {
@@ -37,7 +37,7 @@ class ExpeditionBookletController
      */
     public function saveBooklet(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('expeditions');
 
         $data    = Request::json();
         $booklet = ExpeditionBooklet::save((int)$params['id'], $data);
@@ -50,7 +50,7 @@ class ExpeditionBookletController
      */
     public function publishBooklet(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('expeditions');
 
         $booklet = ExpeditionBooklet::publish((int)$params['id']);
         Response::success($booklet);

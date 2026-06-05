@@ -127,7 +127,7 @@
         <div class="card">
             <div class="card-body">
                 <p class="text-muted small">
-                    会員以外のOB・OG等にもショップURLを共有できます。発行したURLは全商品共通です。
+                    この商品専用の公開ショップURLを発行できます。URLを受け取った方は会員ログイン後にこの商品を注文できます。
                 </p>
                 <div class="d-flex gap-2 mb-3">
                     <input type="text" class="form-control" id="tokenLabel" placeholder="ラベル（例: 2026年OB会用）">
@@ -194,9 +194,9 @@ async function saveBasic() {
         is_active:   document.getElementById('editActive').checked ? 1 : 0,
     };
     const res = await fetch('/api/merchandise/' + merchandiseId, {
-        method:  'PUT',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(body),
+        body:    JSON.stringify({ ...body, _method: 'PUT' }),
     });
     const data = await res.json();
     document.getElementById('saveStatus').textContent = data.success ? '保存しました' : '保存に失敗しました';
@@ -275,9 +275,9 @@ async function saveColors() {
     })).filter(c => c.color_name);
 
     const res  = await fetch(`/api/merchandise/${merchandiseId}/colors`, {
-        method:  'PUT',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ colors }),
+        body:    JSON.stringify({ colors, _method: 'PUT' }),
     });
     const data = await res.json();
     if (data.success) {
@@ -319,9 +319,9 @@ async function saveSizes() {
     })).filter(s => s.size_name);
 
     const res  = await fetch(`/api/merchandise/${merchandiseId}/sizes`, {
-        method:  'PUT',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ sizes }),
+        body:    JSON.stringify({ sizes, _method: 'PUT' }),
     });
     const data = await res.json();
     if (data.success) {
@@ -415,11 +415,21 @@ async function togglePaid(id) {
 
 async function deleteOrder(id) {
     if (!confirm('この注文を削除しますか？')) return;
-    const res  = await fetch(`/api/merchandise/orders/${id}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (data.success) {
-        loadOrders();
-        loadSummary();
+    try {
+        const res  = await fetch(`/api/merchandise/orders/${id}`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ _method: 'DELETE' }),
+        });
+        const data = await res.json();
+        if (data.success) {
+            loadOrders();
+            loadSummary();
+        } else {
+            alert('削除に失敗しました: ' + (data.error?.message || '不明なエラー'));
+        }
+    } catch (e) {
+        alert('通信エラーが発生しました');
     }
 }
 
@@ -527,7 +537,7 @@ async function loadSummary() {
 
 // ===== 公開URL =====
 async function loadTokens() {
-    const res  = await fetch('/api/merchandise/tokens');
+    const res  = await fetch(`/api/merchandise/${merchandiseId}/tokens`);
     const data = await res.json();
     const root = document.getElementById('tokenList');
     if (!data.success || !data.data.tokens.length) {
@@ -560,7 +570,7 @@ async function loadTokens() {
 
 async function generateToken() {
     const label = document.getElementById('tokenLabel').value.trim();
-    const res   = await fetch('/api/merchandise/tokens', {
+    const res   = await fetch(`/api/merchandise/${merchandiseId}/tokens`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ label }),
@@ -576,9 +586,18 @@ async function generateToken() {
 
 async function deleteToken(id) {
     if (!confirm('このURLを無効にしますか？')) return;
-    const res  = await fetch(`/api/merchandise/tokens/${id}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (data.success) loadTokens();
+    try {
+        const res  = await fetch(`/api/merchandise/tokens/${id}`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ _method: 'DELETE' }),
+        });
+        const data = await res.json();
+        if (data.success) loadTokens();
+        else alert('削除に失敗しました: ' + (data.error?.message || '不明なエラー'));
+    } catch (e) {
+        alert('通信エラーが発生しました');
+    }
 }
 
 function copyText(text) {
@@ -587,12 +606,20 @@ function copyText(text) {
 
 async function deleteMerchandise() {
     if (!confirm('この商品を削除しますか？関連する注文・色・サイズもすべて削除されます。')) return;
-    const res = await fetch('/api/merchandise/' + merchandiseId, { method: 'DELETE' });
-    const data = await res.json();
-    if (data.success) {
-        location.href = '/merchandise';
-    } else {
-        alert('削除に失敗しました');
+    try {
+        const res = await fetch('/api/merchandise/' + merchandiseId, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ _method: 'DELETE' }),
+        });
+        const data = await res.json();
+        if (data.success) {
+            location.href = '/merchandise';
+        } else {
+            alert('削除に失敗しました: ' + (data.error?.message || '不明なエラー'));
+        }
+    } catch (e) {
+        alert('通信エラーが発生しました');
     }
 }
 

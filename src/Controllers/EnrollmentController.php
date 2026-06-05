@@ -65,7 +65,7 @@ class EnrollmentController
                 'birthdate' => Request::get('birthdate'),
                 'student_id' => Request::get('student_id'),
                 'faculty' => Request::get('faculty'),
-                'department' => Request::get('department'),
+                'department' => (new StudentIdParserService())->normalizeGakukei(Request::get('department')),
                 'enrollment_year' => Request::get('enrollment_year'),
                 'phone' => Request::get('phone'),
                 'address' => Request::get('address'),

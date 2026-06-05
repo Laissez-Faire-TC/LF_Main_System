@@ -9,7 +9,7 @@ class CollectionController
 
     public function __construct()
     {
-        Auth::requireAuth();
+        Auth::requirePermission('camps');
         $this->collectionModel = new CampCollection();
         $this->itemModel       = new CampCollectionItem();
     }

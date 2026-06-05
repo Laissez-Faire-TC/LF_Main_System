@@ -2,6 +2,7 @@
 config/database.php
 config/mail.php
 config/ai.php
+config/oauth.php
 
 # Composer依存パッケージ
 vendor/

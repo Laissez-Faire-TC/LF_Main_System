@@ -80,6 +80,56 @@
                 <button class="btn btn-primary btn-sm" onclick="showAddParticipantModal()">+ 参加者を追加</button>
             </div>
         </div>
+
+        <!-- 検索・並び替え -->
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <input type="text" class="form-control form-control-sm"
+                       id="participantSearch"
+                       placeholder="名前で検索..."
+                       oninput="filterParticipants()">
+            </div>
+            <div class="col-md-8">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <!-- 第1ソート -->
+                    <div class="input-group input-group-sm" style="width: auto;">
+                        <span class="input-group-text">並び替え</span>
+                        <select class="form-select form-select-sm"
+                                id="sortPrimary"
+                                onchange="applySorting()"
+                                style="width: auto;">
+                            <option value="id">登録順</option>
+                            <option value="name">名前</option>
+                            <option value="grade" selected>学年</option>
+                            <option value="gender">性別</option>
+                        </select>
+                        <button type="button" class="btn btn-outline-secondary"
+                                id="sortPrimaryDir"
+                                onclick="toggleSortDirection('primary')"
+                                title="昇順/降順切り替え">↑</button>
+                    </div>
+                    <!-- 第2ソート -->
+                    <div class="input-group input-group-sm" style="width: auto;">
+                        <span class="input-group-text">→</span>
+                        <select class="form-select form-select-sm"
+                                id="sortSecondary"
+                                onchange="applySorting()"
+                                style="width: auto;">
+                            <option value="">なし</option>
+                            <option value="id">登録順</option>
+                            <option value="name">名前</option>
+                            <option value="grade">学年</option>
+                            <option value="gender" selected>性別</option>
+                        </select>
+                        <button type="button" class="btn btn-outline-secondary"
+                                id="sortSecondaryDir"
+                                onclick="toggleSortDirection('secondary')"
+                                title="昇順/降順切り替え">↑</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div id="participantList">読み込み中...</div>
         <div id="allergySummary" class="mt-3"></div>
     </div>
@@ -257,7 +307,7 @@
                 <div class="mb-3">
                     <label class="form-label">定員</label>
                     <div class="input-group">
-                        <input type="number" class="form-control" id="newCarCapacity" min="1" value="5">
+                        <input type="number" class="form-control" id="newCarCapacity" min="1" value="6">
                         <span class="input-group-text">人</span>
                     </div>
                 </div>
@@ -444,6 +494,12 @@ let currentCarId = null;
 
 // 参加者キャッシュ（各モーダルのセレクト生成に使用）
 let participantsCache = [];
+
+// 参加者一覧のソート設定（合宿管理と同仕様）
+let sortConfig = {
+    primary:   { key: 'grade',  direction: 1 },
+    secondary: { key: 'gender', direction: 1 }
+};
 
 document.addEventListener('DOMContentLoaded', () => {
     // モーダルを初期化
@@ -763,7 +819,7 @@ async function loadParticipants() {
         const data = await res.json();
         if (data.success) {
             participantsCache = data.data || [];
-            renderParticipants(participantsCache);
+            renderParticipants();
             // エクスポートボタンのURLをセット
             document.getElementById('btnExportXlsx').href  = `/api/expeditions/${expeditionId}/export/xlsx`;
             document.getElementById('btnExportPdf').href   = `/api/expeditions/${expeditionId}/export/pdf`;
@@ -778,8 +834,20 @@ async function loadParticipants() {
     }
 }
 
+// 10月引退ルール: 3年生は10月以降（10月〜3月）OB扱い
+function isRetiredAsOB(grade) {
+    if (grade !== 3) return false;
+    const month = new Date().getMonth();
+    return month >= 9 || month <= 2;
+}
+
 function getGradeGenderLabel(grade, gender) {
     if (grade === null && gender === null) return '';
+    if (grade === 3 && isRetiredAsOB(grade)) {
+        if (gender === 'male')   return 'OB';
+        if (gender === 'female') return 'OG';
+        return 'OB/OG';
+    }
     if (grade === 0 || grade === '0') {
         if (gender === 'male')   return 'OB';
         if (gender === 'female') return 'OG';
@@ -790,7 +858,81 @@ function getGradeGenderLabel(grade, gender) {
     return gradeStr + genderStr;
 }
 
-function renderParticipants(participants) {
+// ソート用の実効学年を取得（10月引退ルール適用）
+function getEffectiveGradeForSort(grade) {
+    if (grade === null || grade === undefined) return 999;
+    const g = parseInt(grade);
+    if (g === 0) return 99;
+    if (g === 3 && isRetiredAsOB(g)) return 99;
+    return g;
+}
+
+// ソートキーによる比較関数
+function compareByKey(a, b, key) {
+    if (key === 'id') {
+        return (a.id || 0) - (b.id || 0);
+    } else if (key === 'name') {
+        return (a.name_kanji || '').localeCompare(b.name_kanji || '', 'ja');
+    } else if (key === 'grade') {
+        return getEffectiveGradeForSort(a.grade) - getEffectiveGradeForSort(b.grade);
+    } else if (key === 'gender') {
+        const order = { 'male': 1, 'female': 2 };
+        return (order[a.gender] || 3) - (order[b.gender] || 3);
+    }
+    return 0;
+}
+
+// ソート方向切り替え
+function toggleSortDirection(level) {
+    if (level === 'primary') {
+        sortConfig.primary.direction *= -1;
+        document.getElementById('sortPrimaryDir').textContent = sortConfig.primary.direction === 1 ? '↑' : '↓';
+    } else {
+        sortConfig.secondary.direction *= -1;
+        document.getElementById('sortSecondaryDir').textContent = sortConfig.secondary.direction === 1 ? '↑' : '↓';
+    }
+    renderParticipants();
+}
+
+// ソート適用
+function applySorting() {
+    sortConfig.primary.key   = document.getElementById('sortPrimary').value;
+    sortConfig.secondary.key = document.getElementById('sortSecondary').value || '';
+    renderParticipants();
+}
+
+// 検索フィルタ適用
+function filterParticipants() {
+    renderParticipants();
+}
+
+// 検索+ソート済みの参加者リストを返す
+function getSortedFilteredParticipants(source) {
+    let participants = [...(source || [])];
+
+    const searchEl   = document.getElementById('participantSearch');
+    const searchText = searchEl ? searchEl.value.toLowerCase() : '';
+    if (searchText) {
+        participants = participants.filter(p => (p.name_kanji || '').toLowerCase().includes(searchText));
+    }
+
+    participants.sort((a, b) => {
+        let cmp = compareByKey(a, b, sortConfig.primary.key);
+        if (cmp !== 0) return cmp * sortConfig.primary.direction;
+
+        if (sortConfig.secondary.key) {
+            cmp = compareByKey(a, b, sortConfig.secondary.key);
+            if (cmp !== 0) return cmp * sortConfig.secondary.direction;
+        }
+
+        return (a.name_kanji || '').localeCompare(b.name_kanji || '', 'ja');
+    });
+
+    return participants;
+}
+
+function renderParticipants() {
+    const participants = participantsCache || [];
     document.getElementById('participantCount').textContent = participants.length;
 
     if (participants.length === 0) {
@@ -798,8 +940,8 @@ function renderParticipants(participants) {
         return;
     }
 
-    const confirmed  = participants.filter(p => p.status === 'confirmed');
-    const waitlisted = participants.filter(p => p.status === 'waitlisted');
+    const confirmed  = getSortedFilteredParticipants(participants.filter(p => p.status === 'confirmed'));
+    const waitlisted = getSortedFilteredParticipants(participants.filter(p => p.status === 'waitlisted'));
 
     const makeRows = (list) => list.map(p => {
         const gradeGender  = getGradeGenderLabel(p.grade, p.gender);
@@ -827,9 +969,9 @@ function renderParticipants(participants) {
             ${[1,2,3,4,5,6].map(n => `<option value="${n}" ${p.friday_last_class == n ? 'selected' : ''}>${n}限後</option>`).join('')}
         </select>`;
 
-        // 車を予約するか チェックボックス
+        // 車を予約するか チェックボックス（ON時は乗車フラグも自動でON）
         const bookCheck = `<input type="checkbox" class="form-check-input" ${p.can_book_car == 1 ? 'checked' : ''}
-            onchange="updateParticipant(${p.id}, 'can_book_car', this.checked ? 1 : 0)">`;
+            onchange="toggleCanBookCar(${p.id}, this.checked)">`;
 
         const timescarHtml = p.timescar_number
             ? `<span class="small">${escapeHtml(p.timescar_number)}</span>`
@@ -1039,6 +1181,36 @@ async function updateParticipant(pid, field, value) {
     }
 }
 
+// 車予約チェックの切り替え。ON にしたら「車に乗る（is_joining_car）」も自動で ON にする
+// （車を予約する＝その車に乗る、というデータ整合性を保つ）。
+async function toggleCanBookCar(pid, checked) {
+    const payload = checked
+        ? { can_book_car: 1, is_joining_car: 1 }
+        : { can_book_car: 0 };
+    try {
+        const res    = await fetch(`/api/expeditions/${expeditionId}/participants/${pid}`, {
+            method:  'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(payload),
+        });
+        const result = await res.json();
+        if (!result.success) {
+            alert(result.error?.message || '更新に失敗しました');
+            participantsLoaded = false;
+            loadParticipants();
+        } else {
+            showToast('更新しました', 'success', 1500);
+            // 乗車フラグも変えた場合は表示を最新化（乗車チェックの見た目を同期）
+            if (checked) {
+                participantsLoaded = false;
+                loadParticipants();
+            }
+        }
+    } catch (err) {
+        alert('通信エラーが発生しました');
+    }
+}
+
 async function deleteParticipant(pid) {
     if (!confirm('この参加者を削除しますか？')) return;
 
@@ -1236,7 +1408,7 @@ function renderCars(cars) {
 
 function showAddCarModal(tripType = 'both') {
     document.getElementById('newCarName').value        = '';
-    document.getElementById('newCarCapacity').value    = '5';
+    document.getElementById('newCarCapacity').value    = '6';
     document.getElementById('newCarRentalFee').value   = '0';
     document.getElementById('newCarHighwayFee').value  = '0';
     document.getElementById('newCarTripType').value    = tripType;
@@ -1255,7 +1427,7 @@ async function addCar() {
     const tripType = document.getElementById('newCarTripType').value || 'both';
     const data = {
         name:            name,
-        capacity:        parseInt(document.getElementById('newCarCapacity').value)   || 5,
+        capacity:        parseInt(document.getElementById('newCarCapacity').value)   || 6,
         rental_fee:      parseInt(document.getElementById('newCarRentalFee').value)  || 0,
         highway_fee:     parseInt(document.getElementById('newCarHighwayFee').value) || 0,
         trip_type:       tripType,
@@ -1291,7 +1463,9 @@ async function autoAssignOutboundCars() {
         if (!data.success) { alert('参加者の取得に失敗しました'); return; }
 
         const allParticipants = data.data || [];
-        const bookers = allParticipants.filter(p => parseInt(p.is_joining_car) === 1 && parseInt(p.can_book_car) === 1);
+        // 車予約にチェックがある人は対象にする（is_joining_car は問わない。
+        // 車を予約する＝その車に乗るため、後から車予約だけ付けた人も漏れなく表示する）。
+        const bookers = allParticipants.filter(p => parseInt(p.can_book_car) === 1);
         if (bookers.length === 0) {
             alert('車を予約できる人が登録されていません。\n参加者管理タブで「車予約」にチェックを入れてください。');
             return;
@@ -1302,79 +1476,250 @@ async function autoAssignOutboundCars() {
             p.driver_type === 'driver' || p.driver_type === 'sub_driver'
         ).length;
 
-        const carCount  = bookers.length;
-        const shortfall = carCount * 2 - totalDrivers; // 不足ドライバー数
+        window._autoAssignBookers     = bookers;
+        window._autoAssignTotalDrivers = totalDrivers;
+        // 車に乗る対象の全参加者（固定指定の「人」プルダウン用）
+        window._autoAssignAllParticipants = allParticipants.filter(p =>
+            parseInt(p.is_joining_car) === 1 || parseInt(p.can_book_car) === 1
+        );
+        // 初期状態は全員「使用」。チェック状態を member_id => bool で保持
+        window._autoAssignUseCar = {};
+        bookers.forEach(b => { window._autoAssignUseCar[b.member_id] = true; });
+        // 各車の定員（member_id => 人数）と一人運転の選択（member_id => bool）。
+        // 再描画でDOMが作り直されても入力値を保持するためにここで管理する。
+        window._autoAssignCapacities = {};
+        window._autoAssignSolo       = {};
+        // 乗員の固定指定: [{ member_id, car_owner_id }, ...]
+        window._autoAssignPinned = [];
 
-        const classLabel = (v) => v == null ? '不明' : v == 0 ? '早出' : `${v}限後出発`;
-
-        const rows = bookers.map(b => `
-            <tr>
-                <td>${escapeHtml(b.name_kanji)}</td>
-                <td><span class="badge bg-success">${classLabel(b.friday_last_class)}</span></td>
-                <td>
-                    <div class="input-group input-group-sm" style="width:110px;">
-                        <input type="number" class="form-control" id="bookerCap_${b.member_id}"
-                               value="5" min="1" max="20">
-                        <span class="input-group-text">人</span>
-                    </div>
-                </td>
-                ${shortfall > 0 ? `<td class="text-center">
-                    <input type="checkbox" class="form-check-input solo-check" id="bookerSolo_${b.member_id}"
-                           value="${b.member_id}">
-                </td>` : ''}
-            </tr>`).join('');
-
-        const soloColHeader = shortfall > 0
-            ? `<th class="text-center">一人運転<span class="text-muted small ms-1">（${shortfall}台選択）</span></th>`
-            : '';
-
-        const shortfallAlert = shortfall > 0 ? `
-            <div class="alert alert-warning py-2 small mb-2">
-                <i class="bi bi-exclamation-triangle"></i>
-                ドライバー能力のある人が合計 ${totalDrivers} 人で、車 ${carCount} 台に2人ずつ配置するには ${shortfall} 人不足しています。<br>
-                <strong>一人で運転する車を ${shortfall} 台選んでください。</strong>
-            </div>` : `
-            <div class="alert alert-success py-2 small mb-2">
-                <i class="bi bi-check-circle"></i>
-                ドライバー ${totalDrivers} 人 / 車 ${carCount} 台。サブドライバーは自動で割り当てます。
-            </div>`;
-
-        document.getElementById('autoAssignBookerList').innerHTML = `
-            ${shortfallAlert}
-            <div class="table-responsive">
-                <table class="table table-sm">
-                    <thead class="table-light">
-                        <tr>
-                            <th>車を借りる人</th>
-                            <th>出発時限</th>
-                            <th>定員</th>
-                            ${soloColHeader}
-                        </tr>
-                    </thead>
-                    <tbody>${rows}</tbody>
-                </table>
-            </div>
-            <div class="alert alert-info py-2 small mb-0">
-                <i class="bi bi-info-circle"></i>
-                既存の往路の車はすべて削除され、上記の車に置き換わります
-            </div>
-        `;
-        window._autoAssignBookers  = bookers;
-        window._autoAssignShortfall = shortfall;
+        renderAutoAssignBookerList();
         carAutoAssignModal.show();
     } catch (err) {
         alert('通信エラーが発生しました');
     }
 }
 
+// 自動生成モーダルの車一覧を描画（「使用」チェックの状態に応じて台数・不足数を再計算）
+function renderAutoAssignBookerList() {
+    // 再描画でDOMが消える前に、入力済みの値（固定指定・定員・一人運転）を保存しておく
+    syncPinnedFromDom();
+    syncBookerSettingsFromDom();
+
+    const bookers      = window._autoAssignBookers || [];
+    const totalDrivers = window._autoAssignTotalDrivers || 0;
+    const useCar       = window._autoAssignUseCar || {};
+
+    // 実際に使う（チェックされた）車だけを対象に台数・不足数を計算
+    const selected  = bookers.filter(b => useCar[b.member_id]);
+    const carCount  = selected.length;
+    const shortfall = carCount * 2 - totalDrivers; // 不足ドライバー数（使用車ベース）
+    window._autoAssignShortfall = shortfall;
+
+    const classLabel = (v) => v == null ? '不明' : v == 0 ? '早出' : `${v}限後出発`;
+
+    const savedCaps = window._autoAssignCapacities || {};
+    const savedSolo = window._autoAssignSolo || {};
+
+    const rows = bookers.map(b => {
+        const on = !!useCar[b.member_id];
+        // 保存済みの定員があればそれを、なければデフォルト6を使う
+        const capVal   = savedCaps[b.member_id] != null ? savedCaps[b.member_id] : 6;
+        const soloOn   = !!savedSolo[b.member_id];
+        return `
+            <tr class="${on ? '' : 'table-secondary text-muted'}">
+                <td class="text-center">
+                    <input type="checkbox" class="form-check-input use-car-check" id="bookerUse_${b.member_id}"
+                           value="${b.member_id}" ${on ? 'checked' : ''}
+                           onchange="toggleAutoAssignUseCar(${b.member_id}, this.checked)">
+                </td>
+                <td>${escapeHtml(b.name_kanji)}</td>
+                <td><span class="badge bg-success">${classLabel(b.friday_last_class)}</span></td>
+                <td>
+                    <div class="input-group input-group-sm" style="width:110px;">
+                        <input type="number" class="form-control" id="bookerCap_${b.member_id}"
+                               value="${capVal}" min="1" max="20" ${on ? '' : 'disabled'}>
+                        <span class="input-group-text">人</span>
+                    </div>
+                </td>
+                ${shortfall > 0 ? `<td class="text-center">
+                    ${on ? `<input type="checkbox" class="form-check-input solo-check" id="bookerSolo_${b.member_id}"
+                           value="${b.member_id}" ${soloOn ? 'checked' : ''}>` : ''}
+                </td>` : ''}
+            </tr>`;
+    }).join('');
+
+    const soloColHeader = shortfall > 0
+        ? `<th class="text-center">一人運転<span class="text-muted small ms-1">（${shortfall}台選択）</span></th>`
+        : '';
+
+    let statusAlert;
+    if (carCount === 0) {
+        statusAlert = `
+            <div class="alert alert-danger py-2 small mb-2">
+                <i class="bi bi-exclamation-triangle"></i>
+                車を1台も使用しない設定です。少なくとも1台は「使用」にチェックしてください。
+            </div>`;
+    } else if (shortfall > 0) {
+        statusAlert = `
+            <div class="alert alert-warning py-2 small mb-2">
+                <i class="bi bi-exclamation-triangle"></i>
+                ドライバー能力のある人が合計 ${totalDrivers} 人で、使用する車 ${carCount} 台に2人ずつ配置するには ${shortfall} 人不足しています。<br>
+                <strong>一人で運転する車を ${shortfall} 台選んでください。</strong>
+            </div>`;
+    } else {
+        statusAlert = `
+            <div class="alert alert-success py-2 small mb-2">
+                <i class="bi bi-check-circle"></i>
+                ドライバー ${totalDrivers} 人 / 使用する車 ${carCount} 台。サブドライバーは自動で割り当てます。
+            </div>`;
+    }
+
+    document.getElementById('autoAssignBookerList').innerHTML = `
+        ${statusAlert}
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center">使用</th>
+                        <th>車を借りる人</th>
+                        <th>出発時限</th>
+                        <th>定員</th>
+                        ${soloColHeader}
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>
+        <div class="alert alert-info py-2 small mb-2">
+            <i class="bi bi-info-circle"></i>
+            既存の往路の車はすべて削除され、「使用」にチェックした車に置き換わります
+        </div>
+        ${renderPinnedSection(selected)}
+    `;
+}
+
+// 乗員の固定指定セクションを組み立てる（特定の人を特定のドライバーの車に固定）
+function renderPinnedSection(selectedBookers) {
+    const allParticipants = window._autoAssignAllParticipants || [];
+    const pinned          = window._autoAssignPinned || [];
+
+    // 車の選択肢＝使用するドライバー（選択された booker）
+    const carOptions = selectedBookers.map(b =>
+        `<option value="${b.member_id}">${escapeHtml(b.name_kanji)}車</option>`
+    ).join('');
+
+    // 人の選択肢＝車に乗る全参加者
+    const personOptions = allParticipants.map(p =>
+        `<option value="${p.member_id}">${escapeHtml(p.name_kanji)}</option>`
+    ).join('');
+
+    const rows = pinned.map((pin, i) => `
+        <div class="d-flex align-items-center gap-2 mb-2 pinned-row">
+            <select class="form-select form-select-sm pinned-person" style="max-width:160px;">
+                <option value="">― 参加者を選択 ―</option>
+                ${allParticipants.map(p =>
+                    `<option value="${p.member_id}" ${String(p.member_id) === String(pin.member_id) ? 'selected' : ''}>${escapeHtml(p.name_kanji)}</option>`
+                ).join('')}
+            </select>
+            <span class="text-muted small">を</span>
+            <select class="form-select form-select-sm pinned-car" style="max-width:160px;">
+                <option value="">― 車を選択 ―</option>
+                ${selectedBookers.map(b =>
+                    `<option value="${b.member_id}" ${String(b.member_id) === String(pin.car_owner_id) ? 'selected' : ''}>${escapeHtml(b.name_kanji)}車</option>`
+                ).join('')}
+            </select>
+            <span class="text-muted small">に固定</span>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="removePinnedRow(${i})">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>`).join('');
+
+    return `
+        <div class="border rounded p-2">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong class="small"><i class="bi bi-pin-angle"></i> 乗員の固定指定（任意）</strong>
+                <button type="button" class="btn btn-sm btn-outline-primary" onclick="addPinnedRow()">
+                    <i class="bi bi-plus-lg"></i> 固定を追加
+                </button>
+            </div>
+            <div class="text-muted small mb-2">特定の人を特定の車に必ず乗せたい場合に指定します（残りは自動で割り当てます）。</div>
+            ${rows || '<div class="text-muted small">指定なし</div>'}
+        </div>`;
+}
+
+// 固定指定行の現在の選択値を DOM から読み取り、_autoAssignPinned に保存する
+function syncPinnedFromDom() {
+    const rows = document.querySelectorAll('#autoAssignBookerList .pinned-row');
+    if (rows.length === 0) return; // 未描画なら何もしない（初回 or リセット時は既存値を維持）
+    const pinned = [];
+    rows.forEach(row => {
+        pinned.push({
+            member_id:    row.querySelector('.pinned-person')?.value || '',
+            car_owner_id: row.querySelector('.pinned-car')?.value    || '',
+        });
+    });
+    window._autoAssignPinned = pinned;
+}
+
+// 各車の定員・一人運転の現在の入力値を DOM から読み取り、再描画後も保持できるよう保存する。
+// （固定追加やアラート解消などの再描画で入力値がデフォルトに戻るのを防ぐ）
+function syncBookerSettingsFromDom() {
+    if (!window._autoAssignCapacities) window._autoAssignCapacities = {};
+    if (!window._autoAssignSolo)       window._autoAssignSolo       = {};
+    const bookers = window._autoAssignBookers || [];
+    bookers.forEach(b => {
+        const capEl = document.getElementById(`bookerCap_${b.member_id}`);
+        if (capEl && capEl.value !== '') {
+            window._autoAssignCapacities[b.member_id] = parseInt(capEl.value, 10) || 6;
+        }
+        const soloEl = document.getElementById(`bookerSolo_${b.member_id}`);
+        if (soloEl) {
+            window._autoAssignSolo[b.member_id] = soloEl.checked;
+        }
+    });
+}
+
+function addPinnedRow() {
+    syncPinnedFromDom();
+    if (!window._autoAssignPinned) window._autoAssignPinned = [];
+    window._autoAssignPinned.push({ member_id: '', car_owner_id: '' });
+    renderAutoAssignBookerList();
+}
+
+function removePinnedRow(index) {
+    syncPinnedFromDom();
+    if (!window._autoAssignPinned) return;
+    window._autoAssignPinned.splice(index, 1);
+    renderAutoAssignBookerList();
+}
+
+// 「使用」チェック切り替え時：状態を保存して再描画（台数・不足数を再計算）
+function toggleAutoAssignUseCar(memberId, checked) {
+    if (!window._autoAssignUseCar) window._autoAssignUseCar = {};
+    window._autoAssignUseCar[memberId] = checked;
+    renderAutoAssignBookerList();
+}
+
 async function executeCarAutoAssign() {
-    const bookers   = window._autoAssignBookers  || [];
-    const shortfall = window._autoAssignShortfall || 0;
-    const capacities  = {};
-    const soloBookers = [];
+    const allBookers = window._autoAssignBookers  || [];
+    const shortfall  = window._autoAssignShortfall || 0;
+    const useCar     = window._autoAssignUseCar || {};
+
+    // 「使用」にチェックした車だけを対象にする
+    const bookers = allBookers.filter(b => useCar[b.member_id]);
+    if (bookers.length === 0) {
+        alert('車を1台も使用しない設定です。少なくとも1台は「使用」にチェックしてください。');
+        carAutoAssignModal.show();
+        return;
+    }
+
+    const capacities     = {};
+    const soloBookers     = [];
+    const selectedBookers = [];
 
     for (const b of bookers) {
-        capacities[b.member_id] = parseInt(document.getElementById(`bookerCap_${b.member_id}`).value, 10) || 5;
+        selectedBookers.push(parseInt(b.member_id));
+        capacities[b.member_id] = parseInt(document.getElementById(`bookerCap_${b.member_id}`).value, 10) || 6;
         if (shortfall > 0 && document.getElementById(`bookerSolo_${b.member_id}`)?.checked) {
             soloBookers.push(parseInt(b.member_id));
         }
@@ -1385,6 +1730,27 @@ async function executeCarAutoAssign() {
         alert(`一人で運転する車をちょうど ${shortfall} 台選んでください（現在 ${soloBookers.length} 台）`);
         carAutoAssignModal.show();
         return;
+    }
+
+    // 乗員の固定指定を収集（人 → 乗せる車のドライバーID）
+    syncPinnedFromDom();
+    const pinnedMembers = {};
+    const selectedSet   = new Set(selectedBookers);
+    for (const pin of (window._autoAssignPinned || [])) {
+        const mid = parseInt(pin.member_id);
+        const cid = parseInt(pin.car_owner_id);
+        if (!pin.member_id || !pin.car_owner_id) continue; // 未入力行はスキップ
+        if (!selectedSet.has(cid)) {
+            alert('固定先の車が「使用する車」に含まれていません。指定を見直してください。');
+            carAutoAssignModal.show();
+            return;
+        }
+        if (pinnedMembers[mid] !== undefined) {
+            alert('同じ人を複数の車に固定することはできません。');
+            carAutoAssignModal.show();
+            return;
+        }
+        pinnedMembers[mid] = cid;
     }
 
     // 定員合計チェック
@@ -1404,7 +1770,7 @@ async function executeCarAutoAssign() {
         const res    = await fetch(`/api/expeditions/${expeditionId}/cars/auto-assign`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ capacities, solo_bookers: soloBookers }),
+            body:    JSON.stringify({ capacities, solo_bookers: soloBookers, selected_bookers: selectedBookers, pinned_members: pinnedMembers }),
         });
         const result = await res.json();
         if (result.success) {
@@ -1438,7 +1804,7 @@ async function showAutoAssignReturnModal() {
             return;
         }
 
-        const drivers = (data.data || []).filter(p => parseInt(p.is_joining_car) === 1 && parseInt(p.can_book_car) === 1);
+        const drivers = (data.data || []).filter(p => parseInt(p.can_book_car) === 1);
         if (drivers.length === 0) {
             document.getElementById('autoAssignReturnDriverList').innerHTML =
                 '<div class="alert alert-warning small">車を予約できる人が登録されていません。<br>申し込み時に「車の予約をする」を選択した参加者が必要です。</div>';
@@ -1473,7 +1839,7 @@ async function showAutoAssignReturnModal() {
                 <td>
                     <div class="input-group input-group-sm" style="width:100px;">
                         <input type="number" class="form-control" id="returnCap_${d.member_id}"
-                               value="5" min="1" max="20">
+                               value="6" min="1" max="20">
                         <span class="input-group-text">人</span>
                     </div>
                 </td>
@@ -1526,7 +1892,7 @@ async function autoAssignReturnCars() {
     const capacities        = {};
     const preferredStations = {};
     for (const d of drivers) {
-        capacities[d.member_id] = parseInt(document.getElementById(`returnCap_${d.member_id}`)?.value, 10) || 5;
+        capacities[d.member_id] = parseInt(document.getElementById(`returnCap_${d.member_id}`)?.value, 10) || 6;
         const station = document.getElementById(`returnStation_${d.member_id}`)?.value || '';
         if (station) preferredStations[d.member_id] = station;
     }

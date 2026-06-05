@@ -9,7 +9,7 @@ class MembershipFeeController
 
     public function __construct()
     {
-        Auth::requireAuth();
+        Auth::requirePermission('enrollment');
         $this->feeModel  = new MembershipFee();
         $this->itemModel = new MembershipFeeItem();
     }

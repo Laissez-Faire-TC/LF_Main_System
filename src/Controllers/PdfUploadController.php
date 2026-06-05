@@ -9,6 +9,7 @@ class PdfUploadController
 
     public function __construct()
     {
+        Auth::requirePermission('camps');
         $this->parserService = new PdfParserService();
     }
 

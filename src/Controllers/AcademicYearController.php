@@ -11,7 +11,7 @@ class AcademicYearController
 
     public function __construct()
     {
-        Auth::requireAuth();
+        Auth::requirePermission('academic');
         $this->model = new AcademicYear();
     }
 

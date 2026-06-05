@@ -146,28 +146,43 @@ class MerchandiseOrder
     }
 
     /**
-     * 同一購入者の未払い注文を返す（あれば）
+     * 同一購入者・同一商品の未払い注文を返す（あれば）
      * 会員: member_id 一致／暫定: pending_student_id 一致 かつ member_id NULL
+     * カート内の merchandise_id と一致する注文のみを対象にし、
+     * 別商品の注文を誤って上書きしないようにする。
      */
-    private static function findExistingUnpaidOrder(array $buyer): ?array
+    private static function findExistingUnpaidOrder(array $buyer, array $cart): ?array
     {
         $db = Database::getInstance();
+
+        // カート内の商品IDを収集
+        $merchandiseIds = array_values(array_unique(array_filter(
+            array_map(fn($line) => (int)($line['merchandise_id'] ?? 0), $cart)
+        )));
+        if (empty($merchandiseIds)) return null;
+
+        $placeholders = implode(',', array_fill(0, count($merchandiseIds), '?'));
+
         if (!empty($buyer['member_id'])) {
             return $db->fetch(
-                "SELECT id FROM merchandise_orders
-                 WHERE member_id = ? AND payment_status = 'unpaid'
-                 ORDER BY created_at DESC LIMIT 1",
-                [(int)$buyer['member_id']]
+                "SELECT DISTINCT o.id FROM merchandise_orders o
+                 JOIN merchandise_order_items oi ON oi.order_id = o.id
+                 WHERE o.member_id = ? AND o.payment_status = 'unpaid'
+                   AND oi.merchandise_id IN ({$placeholders})
+                 ORDER BY o.created_at DESC LIMIT 1",
+                array_merge([(int)$buyer['member_id']], $merchandiseIds)
             );
         }
         if (!empty($buyer['pending_student_id'])) {
             return $db->fetch(
-                "SELECT id FROM merchandise_orders
-                 WHERE pending_student_id = ?
-                   AND member_id IS NULL
-                   AND payment_status = 'unpaid'
-                 ORDER BY created_at DESC LIMIT 1",
-                [trim($buyer['pending_student_id'])]
+                "SELECT DISTINCT o.id FROM merchandise_orders o
+                 JOIN merchandise_order_items oi ON oi.order_id = o.id
+                 WHERE o.pending_student_id = ?
+                   AND o.member_id IS NULL
+                   AND o.payment_status = 'unpaid'
+                   AND oi.merchandise_id IN ({$placeholders})
+                 ORDER BY o.created_at DESC LIMIT 1",
+                array_merge([trim($buyer['pending_student_id'])], $merchandiseIds)
             );
         }
         return null;
@@ -175,12 +190,12 @@ class MerchandiseOrder
 
     /**
      * 注文を作成または既存の未払い注文を上書き
-     * 同一購入者の未払い注文があれば内容を完全上書きし、なければ新規作成する。
+     * 同一購入者・同一商品の未払い注文があれば内容を完全上書きし、なければ新規作成する。
      * 戻り値の 'was_updated' は true=更新, false=新規。
      */
     public static function createOrUpdate(array $cart, array $buyer): ?array
     {
-        $existing = self::findExistingUnpaidOrder($buyer);
+        $existing = self::findExistingUnpaidOrder($buyer, $cart);
         if ($existing) {
             $order = self::update((int)$existing['id'], $cart, $buyer);
             if ($order) $order['was_updated'] = true;

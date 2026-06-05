@@ -68,6 +68,13 @@
                             <i class="bi bi-question-circle"></i> 使い方
                         </a>
                     </li>
+                    <?php if (Auth::isAdmin()): ?>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/admin-users">
+                            <i class="bi bi-shield-lock"></i> 幹部・権限
+                        </a>
+                    </li>
+                    <?php endif; ?>
                     <li class="nav-item">
                         <button class="btn btn-outline-light btn-sm ms-2" onclick="logout()">
                             <i class="bi bi-box-arrow-right"></i> ログアウト

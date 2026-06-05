@@ -220,9 +220,9 @@ function nameMatches(string $name, string $myName): bool {
     <?php if (!empty($booklet['kohaku_teams'])): ?>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-kohaku">紅白戦</a></li>
     <?php endif; ?>
-    <?php if (!empty($booklet['night_rec_groups'])): ?>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-nrec">夜レク</a></li>
-    <?php endif; ?>
+    <?php foreach (($plans ?? []) as $pi => $plan): ?>
+    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-plan-<?= $pi ?>"><?= htmlspecialchars($plan['name']) ?></a></li>
+    <?php endforeach; ?>
     <?php if (!empty($booklet['room_assignments'])): ?>
     <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-room">部屋割り</a></li>
     <?php endif; ?>
@@ -586,14 +586,14 @@ function nameMatches(string $name, string $myName): bool {
 </div>
 <?php endif; ?>
 
-<!-- ========== 夜レク班分け ========== -->
-<?php if (!empty($booklet['night_rec_groups'])): ?>
-<div class="tab-pane fade" id="tab-nrec">
+<!-- ========== 企画班分け（複数企画） ========== -->
+<?php foreach (($plans ?? []) as $pi => $plan): ?>
+<div class="tab-pane fade" id="tab-plan-<?= $pi ?>">
     <div class="booklet-section">
-        <div class="booklet-section-header"><i class="bi bi-moon-stars"></i> 夜レク班分け</div>
+        <div class="booklet-section-header"><i class="bi bi-people"></i> <?= htmlspecialchars($plan['name']) ?><?= !empty($plan['timing']) ? ' <span class="badge bg-light text-dark">' . htmlspecialchars($plan['timing']) . '</span>' : '' ?></div>
         <div class="booklet-section-body">
             <?php
-            $groups = $booklet['night_rec_groups'];
+            $groups = $plan['groups'];
             $cols   = 4;
             $groupRows = array_chunk($groups, $cols);
             foreach ($groupRows as $groupRow):
@@ -626,7 +626,7 @@ function nameMatches(string $name, string $myName): bool {
         </div>
     </div>
 </div>
-<?php endif; ?>
+<?php endforeach; ?>
 
 <!-- ========== 部屋割り ========== -->
 <?php if (!empty($booklet['room_assignments'])): ?>

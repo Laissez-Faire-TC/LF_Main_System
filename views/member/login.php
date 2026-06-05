@@ -6,8 +6,32 @@
 
             <div id="loginError" class="alert alert-danger d-none"></div>
 
+            <?php if (!empty($oauthError)): ?>
+            <div class="alert alert-warning small py-2"><?= htmlspecialchars($oauthError) ?></div>
+            <?php endif; ?>
+
             <?php if (!empty($returnTo)): ?>
             <div class="alert alert-info small py-2">ログイン後、元のページへ戻ります</div>
+            <?php endif; ?>
+
+            <?php $returnQuery = !empty($returnTo) ? '?return=' . urlencode($returnTo) : ''; ?>
+            <?php if (!empty($googleEnabled) || !empty($lineEnabled)): ?>
+            <div class="d-grid gap-2 mb-3">
+                <?php if (!empty($googleEnabled)): ?>
+                <a href="/member/oauth/google/start<?= $returnQuery ?>" class="btn btn-outline-dark d-flex align-items-center justify-content-center gap-2">
+                    <i class="bi bi-google"></i> Googleでログイン
+                </a>
+                <?php endif; ?>
+                <?php if (!empty($lineEnabled)): ?>
+                <a href="/member/oauth/line/start<?= $returnQuery ?>" class="btn d-flex align-items-center justify-content-center gap-2" style="background-color:#06C755;color:#fff;">
+                    <i class="bi bi-chat-fill"></i> LINEでログイン
+                </a>
+                <?php endif; ?>
+            </div>
+            <div class="text-center text-muted small mb-2">または学籍番号でログイン</div>
+            <p class="text-center text-muted" style="font-size:.75rem;">
+                ※ 外部アカウント連携を設定した方は、上のボタンからのみログインできます。
+            </p>
             <?php endif; ?>
 
             <form id="memberLoginForm" onsubmit="return handleMemberLogin(event)">

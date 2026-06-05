@@ -87,11 +87,14 @@ class EventApplication
         $existing = $this->findByEventAndMember($eventId, $memberId);
 
         if ($existing) {
-            return $this->db->execute(
-                "UPDATE event_applications SET status = ?, note = ?, promoted = 0, updated_at = NOW()
-                 WHERE event_id = ? AND member_id = ?",
-                [$status, $note, $eventId, $memberId]
-            ) >= 0;
+            // キャンセル後の再申し込みは created_at をリセットしてキャンセル待ち末尾に並ぶようにする
+            $resetCreatedAt = ($existing['status'] === 'cancelled');
+            $sql = $resetCreatedAt
+                ? "UPDATE event_applications SET status = ?, note = ?, promoted = 0, created_at = NOW(), updated_at = NOW()
+                   WHERE event_id = ? AND member_id = ?"
+                : "UPDATE event_applications SET status = ?, note = ?, promoted = 0, updated_at = NOW()
+                   WHERE event_id = ? AND member_id = ?";
+            return $this->db->execute($sql, [$status, $note, $eventId, $memberId]) >= 0;
         }
 
         $this->db->insert(
@@ -136,6 +139,34 @@ class EventApplication
         );
 
         return $prevStatus;
+    }
+
+    /**
+     * 班番号を一括保存
+     * $assignments = [ application_id => team_no|null, ... ]
+     * 参加確定者（submitted）のみ対象
+     */
+    public function saveTeamAssignments(int $eventId, array $assignments): void
+    {
+        foreach ($assignments as $appId => $teamNo) {
+            $team = ($teamNo === null || $teamNo === '') ? null : (int)$teamNo;
+            $this->db->execute(
+                "UPDATE event_applications SET team_no = ?, updated_at = NOW()
+                 WHERE id = ? AND event_id = ? AND status = 'submitted'",
+                [$team, (int)$appId, $eventId]
+            );
+        }
+    }
+
+    /**
+     * 全申込の班番号をクリア
+     */
+    public function clearTeamAssignments(int $eventId): void
+    {
+        $this->db->execute(
+            "UPDATE event_applications SET team_no = NULL WHERE event_id = ?",
+            [$eventId]
+        );
     }
 
     /**

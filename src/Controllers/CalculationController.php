@@ -6,7 +6,7 @@ class CalculationController
 {
     public function __construct()
     {
-        Auth::requireAuth();
+        Auth::requirePermission('camps');
     }
 
     /**

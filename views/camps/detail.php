@@ -29,6 +29,12 @@
     <li class="nav-item">
         <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabBooklet" onclick="loadBooklet()">しおり</button>
     </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabTennis">テニス班分け</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabPlans">企画班分け</button>
+    </li>
 </ul>
 
 <div class="tab-content">
@@ -138,6 +144,21 @@
     <!-- 集金管理タブ -->
     <div class="tab-pane fade" id="tabCollection">
         <div id="collectionContent">読み込み中...</div>
+    </div>
+
+    <!-- ========== しおりタブ ========== -->
+    <div class="tab-pane fade" id="tabBooklet">
+        <div id="bookletArea">読み込み中...</div>
+    </div>
+
+    <!-- テニス班分けタブ -->
+    <div class="tab-pane fade" id="tabTennis">
+        <div id="tennisArea">読み込み中...</div>
+    </div>
+
+    <!-- 企画班分けタブ -->
+    <div class="tab-pane fade" id="tabPlans">
+        <div id="plansArea">読み込み中...</div>
     </div>
 </div>
 
@@ -638,6 +659,12 @@ document.addEventListener('DOMContentLoaded', () => {
     allergyListModal = new bootstrap.Modal(document.getElementById('allergyListModal'));
     appEditModal = new bootstrap.Modal(document.getElementById('appEditModal'));
     loadCampData();
+
+    // タブが完全に表示された後に描画（初回の空白・タブ往復時の空白を防ぐ）
+    const tennisBtn = document.querySelector('[data-bs-target="#tabTennis"]');
+    if (tennisBtn) tennisBtn.addEventListener('shown.bs.tab', () => loadTennis());
+    const plansBtn = document.querySelector('[data-bs-target="#tabPlans"]');
+    if (plansBtn) plansBtn.addEventListener('shown.bs.tab', () => loadPlans());
 });
 
 async function loadCampData() {
@@ -2860,11 +2887,6 @@ async function applyMemberEdit(applicationId) {
 }
 </style>
 
-<!-- ========== しおりタブ ========== -->
-<div class="tab-pane fade" id="tabBooklet">
-    <div id="bookletArea">読み込み中...</div>
-</div>
-
 <!-- 参加者選択モーダル -->
 <div class="modal fade" id="participantPickerModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
@@ -3026,107 +3048,6 @@ function renderBookletEditor(b) {
     </div>
     <div class="card-body p-2" id="schedulesDayList">
         ${renderScheduleDays(b.schedules||[])}
-    </div>
-</div>
-
-<!-- 団体戦チーム分け -->
-<div class="card mb-3">
-    <div class="card-header fw-bold d-flex justify-content-between align-items-center">
-        団体戦チーム分け
-        <div class="d-flex gap-2">
-            <button class="btn btn-outline-primary btn-sm" onclick="openPickerForTeamMember(null)">
-                <i class="bi bi-people"></i> 参加者から選択
-            </button>
-            <button class="btn btn-outline-secondary btn-sm" onclick="addTeamBattleTeam()">＋ チーム追加</button>
-        </div>
-    </div>
-    <div class="card-body p-2" id="teamBattleTeamList">
-        ${renderTeamBattleTeams(b.team_battle_teams||[])}
-    </div>
-    <div class="card-footer">
-        <label class="form-label small">団体戦ルール</label>
-        <textarea class="form-control form-control-sm" id="bTeamBattleRules" rows="4" oninput="scheduleBookletSave()">${h(b.team_battle_rules||'')}</textarea>
-    </div>
-</div>
-
-<!-- 紅白戦チーム分け -->
-<div class="card mb-3">
-    <div class="card-header fw-bold">紅白戦チーム分け</div>
-    <div class="card-body">
-        <div class="row g-3">
-            <div class="col-md-6">
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                    <label class="form-label small mb-0 text-danger fw-bold">赤組</label>
-                    <button class="btn btn-outline-primary btn-sm py-0" onclick="openPickerForKohaku()"><i class="bi bi-people"></i> 選択</button>
-                </div>
-                <div id="kohakuRedList">${renderKohakuMembers(b.kohaku_teams?.red||[], 'red')}</div>
-            </div>
-            <div class="col-md-6">
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                    <label class="form-label small mb-0 fw-bold">白組</label>
-                    <button class="btn btn-outline-primary btn-sm py-0" onclick="openPickerForKohakuWhite()"><i class="bi bi-people"></i> 選択</button>
-                </div>
-                <div id="kohakuWhiteList">${renderKohakuMembers(b.kohaku_teams?.white||[], 'white')}</div>
-            </div>
-        </div>
-        <div class="mt-3">
-            <label class="form-label small">紅白戦ルール</label>
-            <textarea class="form-control form-control-sm" id="bKohakuRules" rows="4" oninput="scheduleBookletSave()">${h(b.kohaku_rules||'')}</textarea>
-        </div>
-    </div>
-</div>
-
-<!-- 紅白戦対戦表 -->
-<div class="card mb-3">
-    <div class="card-header fw-bold d-flex justify-content-between">
-        紅白戦対戦表
-        <button class="btn btn-outline-secondary btn-sm" onclick="addKohakuRound()">＋ 試合追加</button>
-    </div>
-    <div class="card-body p-2" id="kohakuMatchList">
-        ${renderKohakuMatches(b.kohaku_matches||[])}
-    </div>
-</div>
-
-<!-- 夜レク班分け -->
-<div class="card mb-3">
-    <div class="card-header fw-bold d-flex justify-content-between align-items-center">
-        夜レク班分け
-        <div class="d-flex gap-2">
-            <button class="btn btn-outline-success btn-sm" onclick="openNightRecAutoModal()">
-                <i class="bi bi-shuffle"></i> 自動振り分け
-            </button>
-            <button class="btn btn-outline-primary btn-sm" onclick="openPickerForNightRec(null)">
-                <i class="bi bi-people"></i> 参加者から選択
-            </button>
-            <button class="btn btn-outline-secondary btn-sm" onclick="addNightRecGroup()">＋ 班追加</button>
-        </div>
-    </div>
-    <div class="card-body p-2" id="nightRecGroupList">
-        ${renderNightRecGroups(b.night_rec_groups||[])}
-    </div>
-</div>
-
-<!-- 夜レク自動振り分けモーダル -->
-<div class="modal fade" id="nightRecAutoModal" tabindex="-1">
-    <div class="modal-dialog modal-sm">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">夜レク自動振り分け</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p class="small text-muted mb-3">学年・男女比が均等になるよう自動で振り分けます。現在の班分けは上書きされます。</p>
-                <div class="mb-3">
-                    <label class="form-label">班数</label>
-                    <input type="number" class="form-control" id="nightRecGroupCount" min="2" max="20" value="4">
-                </div>
-                <div id="nightRecAutoPreview" class="small text-muted"></div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
-                <button type="button" class="btn btn-success" onclick="execNightRecAuto()">振り分ける</button>
-            </div>
-        </div>
     </div>
 </div>
 
@@ -3799,14 +3720,8 @@ async function saveBooklet(auto = false) {
         return_place:      document.getElementById('bReturnPlace')?.value     || '',
         is_public:         document.getElementById('bIsPublic')?.checked ? 1 : 0,
         floor_plan_image:  document.getElementById('bFloorPlanImage')?.value  || '',
-        team_battle_rules: document.getElementById('bTeamBattleRules')?.value || '',
-        kohaku_rules:      document.getElementById('bKohakuRules')?.value     || '',
         items_to_bring:    _bookletData.items_to_bring    || [],
         schedules:         _bookletData.schedules         || [],
-        team_battle_teams: _bookletData.team_battle_teams || [],
-        kohaku_teams:      _bookletData.kohaku_teams      || {red:[],white:[]},
-        kohaku_matches:    _bookletData.kohaku_matches    || [],
-        night_rec_groups:  _bookletData.night_rec_groups  || [],
         room_assignments:  _bookletData.room_assignments  || [],
         meal_duty:         _bookletData.meal_duty         || [],
     };
@@ -4108,5 +4023,831 @@ function openPickerForNightRec(gi) {
         }
         scheduleBookletSave();
     }, disabledNames);
+}
+</script>
+
+<!-- 対戦表 自動生成モーダル -->
+<div class="modal fade" id="matchAutoModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header"><h5 class="modal-title">対戦表を自動生成</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <p class="small text-muted mb-3">紅白戦チーム分けで設定した赤組・白組から対戦表を作成します。同じコマに同一人物は出ず、なるべく試合間隔が空くように、連続して出る場合は同じコートになるよう配置します。<br>現在の対戦表は上書きされます。</p>
+                <div class="row g-2">
+                    <div class="col-4"><label class="form-label small">コマ数（試合数）</label><input type="number" class="form-control" id="maRounds" min="1" max="30" value="4"></div>
+                    <div class="col-4"><label class="form-label small">コート数</label><input type="number" class="form-control" id="maCourts" min="1" max="10" value="2"></div>
+                    <div class="col-4"><label class="form-label small">種別</label>
+                        <select class="form-select" id="maType">
+                            <option value="男子D">男子ダブルス</option>
+                            <option value="女子D">女子ダブルス</option>
+                            <option value="混合D">ミックスD</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                <button type="button" class="btn btn-success" onclick="execMatchAuto()">生成する</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+/* ============================================================
+   テニス班分け（団体戦チーム / 紅白戦チーム / 紅白戦対戦表）
+   ============================================================ */
+const CAMP_ID = <?= (int)$campId ?>;
+let _tennisData = null;
+let _tennisParticipants = [];
+let _tennisLoaded = false;
+
+function tEsc(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+async function loadTennis() {
+    // 2回目以降（タブを開き直したとき）は読み込み済みデータで再描画する
+    if (_tennisLoaded) { renderTennisEditor(); return; }
+    try {
+        const res  = await fetch(`/api/camps/${CAMP_ID}/tennis`);
+        const data = await res.json();
+        if (!data.success) { document.getElementById('tennisArea').innerHTML = '<div class="alert alert-danger">読み込みに失敗しました</div>'; return; }
+        _tennisData = data.data;
+        _tennisData.team_battle_teams = _tennisData.team_battle_teams || [];
+        _tennisData.kohaku_teams      = _tennisData.kohaku_teams || {red:[],white:[]};
+        _tennisData.kohaku_matches    = _tennisData.kohaku_matches || [];
+        _tennisParticipants = data.data.participants || [];
+        _allParticipants = _tennisParticipants;
+        _tennisLoaded = true;
+        renderTennisEditor();
+    } catch(e) {
+        document.getElementById('tennisArea').innerHTML = '<div class="alert alert-danger">通信エラー</div>';
+    }
+}
+
+/* ---- 保存（自動保存） ---- */
+let _tennisSaveTimer = null, _tennisSaving = false;
+function setTennisSaveStatus(state){
+    const el = document.getElementById('tennisSaveStatus'); if(!el) return;
+    el.textContent = {saving:'保存中…',saved:'保存済み',unsaved:'未保存',error:'保存失敗'}[state] || '';
+    el.className = 'small ms-2 ' + ({saving:'text-muted',saved:'text-success',unsaved:'text-warning',error:'text-danger'}[state]||'text-muted');
+}
+function scheduleTennisSave(){ clearTimeout(_tennisSaveTimer); setTennisSaveStatus('unsaved'); _tennisSaveTimer = setTimeout(()=>saveTennis(true),1200); }
+async function saveTennis(auto=false){
+    if(_tennisSaving) return; _tennisSaving = true; setTennisSaveStatus('saving');
+    const payload = {
+        team_battle_teams: _tennisData.team_battle_teams || [],
+        team_battle_rules: document.getElementById('tTeamBattleRules')?.value || '',
+        kohaku_teams:      _tennisData.kohaku_teams || {red:[],white:[]},
+        kohaku_rules:      document.getElementById('tKohakuRules')?.value || '',
+        kohaku_matches:    _tennisData.kohaku_matches || [],
+    };
+    try {
+        const res = await fetch(`/api/camps/${CAMP_ID}/tennis`, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        const data = await res.json();
+        if(data.success){ setTennisSaveStatus('saved'); if(!auto) showToast('テニス班分けを保存しました','success'); }
+        else { setTennisSaveStatus('error'); if(!auto) alert(data.error?.message||'保存に失敗しました'); }
+    } catch(e){ setTennisSaveStatus('error'); if(!auto) alert('通信エラーが発生しました'); }
+    finally { _tennisSaving = false; }
+}
+
+function renderTennisEditor() {
+    const b = _tennisData;
+    document.getElementById('tennisArea').innerHTML = `
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">テニス班分け</h5>
+    <div>
+        <span id="tennisSaveStatus" class="small text-muted ms-2"></span>
+        <button class="btn btn-outline-secondary btn-sm ms-2" onclick="saveTennis(false)"><i class="bi bi-save"></i> 今すぐ保存</button>
+    </div>
+</div>
+
+<!-- 団体戦チーム分け -->
+<div class="card mb-3">
+    <div class="card-header fw-bold d-flex justify-content-between align-items-center">
+        団体戦チーム分け
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary btn-sm" onclick="openPickerForTBattle(null)"><i class="bi bi-people"></i> 参加者から選択</button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="addTBattleTeam()">＋ チーム追加</button>
+        </div>
+    </div>
+    <div class="card-body p-2" id="tBattleTeamList">${renderTBattleTeams(b.team_battle_teams)}</div>
+    <div class="card-footer">
+        <label class="form-label small">団体戦ルール</label>
+        <textarea class="form-control form-control-sm" id="tTeamBattleRules" rows="4" oninput="scheduleTennisSave()">${tEsc(b.team_battle_rules||'')}</textarea>
+    </div>
+</div>
+
+<!-- 紅白戦チーム分け -->
+<div class="card mb-3">
+    <div class="card-header fw-bold">紅白戦チーム分け</div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label class="form-label small mb-0 text-danger fw-bold">赤組</label>
+                    <button class="btn btn-outline-primary btn-sm py-0" onclick="openPickerForKohakuColor('red')"><i class="bi bi-people"></i> 選択</button>
+                </div>
+                <div id="tKohakuRedList">${renderKohakuColorList(b.kohaku_teams?.red||[],'red')}</div>
+            </div>
+            <div class="col-md-6">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <label class="form-label small mb-0 fw-bold">白組</label>
+                    <button class="btn btn-outline-primary btn-sm py-0" onclick="openPickerForKohakuColor('white')"><i class="bi bi-people"></i> 選択</button>
+                </div>
+                <div id="tKohakuWhiteList">${renderKohakuColorList(b.kohaku_teams?.white||[],'white')}</div>
+            </div>
+        </div>
+        <div class="mt-3">
+            <label class="form-label small">紅白戦ルール</label>
+            <textarea class="form-control form-control-sm" id="tKohakuRules" rows="3" oninput="scheduleTennisSave()">${tEsc(b.kohaku_rules||'')}</textarea>
+        </div>
+    </div>
+</div>
+
+<!-- 紅白戦対戦表 -->
+<div class="card mb-3">
+    <div class="card-header fw-bold d-flex justify-content-between align-items-center flex-wrap gap-2">
+        紅白戦対戦表
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-success btn-sm" onclick="openMatchAutoModal()"><i class="bi bi-magic"></i> 対戦表を自動生成</button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="addMatchRound()">＋ コマ追加</button>
+        </div>
+    </div>
+    <div class="card-body p-2" id="matchList">${renderMatches(b.kohaku_matches)}</div>
+</div>
+`;
+}
+
+/* ---- 団体戦チーム ---- */
+function renderTBattleTeams(teams){
+    if(!teams.length) return '<p class="text-muted small p-2 mb-0">まだ登録されていません</p>';
+    return `<div class="row g-2">${teams.map((team,ti)=>`
+    <div class="col-md-3">
+        <div class="border rounded p-2 h-100">
+            <div class="d-flex gap-1 mb-1">
+                <input type="text" class="form-control form-control-sm" value="${tEsc(team.team_name||'')}" oninput="updTBattle(${ti},'team_name',this.value)" placeholder="チーム${ti+1}">
+                <button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="rmTBattle(${ti})">×</button>
+            </div>
+            <div id="tBattleMembers_${ti}">${renderTBattleMembers(team.members||[],ti)}</div>
+            <div class="mt-1"><button class="btn btn-outline-primary btn-sm w-100 py-0" onclick="openPickerForTBattle(${ti})"><i class="bi bi-people"></i> 名簿から選択</button></div>
+        </div>
+    </div>`).join('')}</div>`;
+}
+function renderTBattleMembers(members,ti){
+    if(!members.length) return '<p class="text-muted small mb-1">（未選択）</p>';
+    return members.map((m,mi)=>`
+    <div class="d-flex gap-1 align-items-center mb-1">
+        <input type="checkbox" class="form-check-input flex-shrink-0" ${m.is_leader?'checked':''} onchange="updTBattleMember(${ti},${mi},'is_leader',this.checked)" title="リーダー">
+        <span class="small flex-fill">${tEsc(m.name||'')}</span>
+        <button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="rmTBattleMember(${ti},${mi})">×</button>
+    </div>`).join('');
+}
+function addTBattleTeam(){ _tennisData.team_battle_teams.push({team_name:`チーム${_tennisData.team_battle_teams.length+1}`,members:[]}); document.getElementById('tBattleTeamList').innerHTML=renderTBattleTeams(_tennisData.team_battle_teams); scheduleTennisSave(); }
+function rmTBattle(ti){ _tennisData.team_battle_teams.splice(ti,1); document.getElementById('tBattleTeamList').innerHTML=renderTBattleTeams(_tennisData.team_battle_teams); scheduleTennisSave(); }
+function updTBattle(ti,k,v){ _tennisData.team_battle_teams[ti][k]=v; scheduleTennisSave(); }
+function rmTBattleMember(ti,mi){ _tennisData.team_battle_teams[ti].members.splice(mi,1); document.getElementById(`tBattleMembers_${ti}`).innerHTML=renderTBattleMembers(_tennisData.team_battle_teams[ti].members,ti); scheduleTennisSave(); }
+function updTBattleMember(ti,mi,k,v){ _tennisData.team_battle_teams[ti].members[mi][k]=v; scheduleTennisSave(); }
+function openPickerForTBattle(ti){
+    _allParticipants = _tennisParticipants;
+    let preSelected=[], disabledNames=[];
+    if(ti!==null){
+        preSelected=(_tennisData.team_battle_teams[ti]?.members||[]).map(m=>m.name);
+        _tennisData.team_battle_teams.forEach((t,idx)=>{ if(idx!==ti) (t.members||[]).forEach(m=>{ if(m.name) disabledNames.push(m.name); }); });
+    } else {
+        _tennisData.team_battle_teams.forEach(t=>(t.members||[]).forEach(m=>preSelected.push(m.name)));
+    }
+    openPicker('団体戦メンバーを選択', preSelected, (names)=>{
+        if(ti!==null){
+            _tennisData.team_battle_teams[ti].members = names.map(n=>{ const ex=(_tennisData.team_battle_teams[ti].members||[]).find(m=>m.name===n); return {name:n,is_leader:ex?ex.is_leader:false}; });
+            document.getElementById('tBattleTeamList').innerHTML=renderTBattleTeams(_tennisData.team_battle_teams);
+        } else {
+            const existing=new Set(); _tennisData.team_battle_teams.forEach(t=>(t.members||[]).forEach(m=>existing.add(m.name)));
+            names.filter(n=>!existing.has(n)).forEach(n=>{
+                if(!_tennisData.team_battle_teams.length) _tennisData.team_battle_teams.push({team_name:'チーム1',members:[]});
+                const tgt=_tennisData.team_battle_teams.reduce((a,b)=>(a.members||[]).length<=(b.members||[]).length?a:b);
+                tgt.members.push({name:n,is_leader:false});
+            });
+            document.getElementById('tBattleTeamList').innerHTML=renderTBattleTeams(_tennisData.team_battle_teams);
+        }
+        scheduleTennisSave();
+    }, disabledNames);
+}
+
+/* ---- 紅白戦チーム ---- */
+function renderKohakuColorList(members,color){
+    if(!members.length) return '<p class="text-muted small mb-1">（未選択）</p>';
+    const gmap={}; (_tennisParticipants||[]).forEach(p=>{gmap[p.name]=p.gender;});
+    const males=members.map((m,mi)=>({...m,mi})).filter(m=>gmap[m.name]!=='female');
+    const females=members.map((m,mi)=>({...m,mi})).filter(m=>gmap[m.name]==='female');
+    const row=(m)=>`<div class="d-flex gap-1 align-items-center mb-1"><span class="small flex-fill">${tEsc(m.name||'')}</span><button class="btn btn-outline-danger btn-sm py-0 px-1" onclick="rmKohakuColor('${color}',${m.mi})">×</button></div>`;
+    return `<div class="row g-2">
+        <div class="col-6"><div class="text-muted small fw-bold mb-1">男子</div>${males.length?males.map(row).join(''):'<p class="text-muted small">—</p>'}</div>
+        <div class="col-6"><div class="text-muted small fw-bold mb-1">女子</div>${females.length?females.map(row).join(''):'<p class="text-muted small">—</p>'}</div>
+    </div>`;
+}
+function rmKohakuColor(color,mi){ _tennisData.kohaku_teams[color].splice(mi,1); refreshKohakuColor(color); scheduleTennisSave(); }
+function refreshKohakuColor(color){ const id = color==='red'?'tKohakuRedList':'tKohakuWhiteList'; document.getElementById(id).innerHTML=renderKohakuColorList(_tennisData.kohaku_teams[color],color); }
+function openPickerForKohakuColor(color){
+    _allParticipants=_tennisParticipants;
+    const other = color==='red'?'white':'red';
+    const pre = (_tennisData.kohaku_teams[color]||[]).map(m=>m.name);
+    const disabled = (_tennisData.kohaku_teams[other]||[]).map(m=>m.name);
+    openPicker(`${color==='red'?'赤組':'白組'}を選択`, pre, (names)=>{
+        _tennisData.kohaku_teams[color]=names.map(n=>({name:n}));
+        refreshKohakuColor(color); scheduleTennisSave();
+    }, disabled);
+}
+
+/* ---- 紅白戦対戦表 ---- */
+const T_MATCH_TYPES=[{v:'男子D',l:'男子ダブルス'},{v:'女子D',l:'女子ダブルス'},{v:'混合D',l:'ミックスD'}];
+function renderMatches(matches){
+    if(!matches.length) return '<p class="text-muted small p-2 mb-0">まだ登録されていません。「自動生成」または「コマ追加」で作成してください。</p>';
+    return matches.map((round,ri)=>`
+    <div class="border rounded mb-2 p-2">
+        <div class="d-flex gap-2 align-items-center mb-2">
+            <input type="text" class="form-control form-control-sm" value="${tEsc(round.round||`${ri+1}試合目`)}" oninput="updMatchRound(${ri},this.value)" style="max-width:130px;">
+            <button class="btn btn-outline-secondary btn-sm py-0" onclick="addMatchCourt(${ri})">＋ コート追加</button>
+            <button class="btn btn-outline-danger btn-sm py-0 ms-auto" onclick="rmMatchRound(${ri})">コマ削除</button>
+        </div>
+        <div id="matchCourts_${ri}">${renderMatchCourts(round.courts||[],ri)}</div>
+    </div>`).join('');
+}
+function renderMatchCourts(courts,ri){
+    if(!courts.length) return '<p class="text-muted small mb-0">コートがありません</p>';
+    return courts.map((c,ci)=>{
+        const typeOpts=T_MATCH_TYPES.map(t=>`<option value="${t.v}" ${c.type===t.v?'selected':''}>${t.l}</option>`).join('');
+        const fmt=(n1,n2)=> (!n1&&!n2)?'<span class="text-muted">未選択</span>':`${tEsc(n1||'？')} ／ ${tEsc(n2||'？')}`;
+        return `
+        <div class="border rounded p-2 mb-1 small">
+            <div class="d-flex gap-2 align-items-center mb-2">
+                <span class="text-muted fw-bold">${ci+1}番コート</span>
+                <select class="form-select form-select-sm" style="max-width:150px;" onchange="updMatchCourt(${ri},${ci},'type',this.value)">${typeOpts}</select>
+                <button class="btn btn-outline-danger btn-sm py-0 ms-auto px-2" onclick="rmMatchCourt(${ri},${ci})">×</button>
+            </div>
+            <div class="row g-1">
+                <div class="col-6">
+                    <div class="d-flex justify-content-between align-items-center mb-1"><span class="fw-bold"><span class="badge me-1" style="background:#dc2626;">赤</span>赤組</span>
+                    <button class="btn btn-outline-secondary btn-sm py-0 px-1" onclick="pickMatchPair(${ri},${ci},'red')"><i class="bi bi-people"></i></button></div>
+                    <div class="ps-1">${fmt(c.red1,c.red2)}</div>
+                </div>
+                <div class="col-6">
+                    <div class="d-flex justify-content-between align-items-center mb-1"><span class="fw-bold"><span class="badge me-1 bg-secondary">白</span>白組</span>
+                    <button class="btn btn-outline-secondary btn-sm py-0 px-1" onclick="pickMatchPair(${ri},${ci},'white')"><i class="bi bi-people"></i></button></div>
+                    <div class="ps-1">${fmt(c.white1,c.white2)}</div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+function addMatchRound(){ const ri=_tennisData.kohaku_matches.length; _tennisData.kohaku_matches.push({round:`${ri+1}試合目`,courts:[]}); document.getElementById('matchList').innerHTML=renderMatches(_tennisData.kohaku_matches); scheduleTennisSave(); }
+function rmMatchRound(ri){ _tennisData.kohaku_matches.splice(ri,1); document.getElementById('matchList').innerHTML=renderMatches(_tennisData.kohaku_matches); scheduleTennisSave(); }
+function updMatchRound(ri,v){ _tennisData.kohaku_matches[ri].round=v; scheduleTennisSave(); }
+function addMatchCourt(ri){ _tennisData.kohaku_matches[ri].courts.push({type:'男子D',red1:'',red2:'',white1:'',white2:''}); document.getElementById(`matchCourts_${ri}`).innerHTML=renderMatchCourts(_tennisData.kohaku_matches[ri].courts,ri); scheduleTennisSave(); }
+function rmMatchCourt(ri,ci){ _tennisData.kohaku_matches[ri].courts.splice(ci,1); document.getElementById(`matchCourts_${ri}`).innerHTML=renderMatchCourts(_tennisData.kohaku_matches[ri].courts,ri); scheduleTennisSave(); }
+function updMatchCourt(ri,ci,k,v){ _tennisData.kohaku_matches[ri].courts[ci][k]=v; document.getElementById(`matchCourts_${ri}`).innerHTML=renderMatchCourts(_tennisData.kohaku_matches[ri].courts,ri); scheduleTennisSave(); }
+
+function pickMatchPair(ri,ci,color){
+    _allParticipants=_tennisParticipants;
+    const round=_tennisData.kohaku_matches[ri], court=round.courts[ci];
+    const mt=court.type||'男子D';
+    let genderFilter=null; if(mt==='男子D')genderFilter='male'; else if(mt==='女子D')genderFilter='female';
+    const teamNames=(color==='red'?(_tennisData.kohaku_teams?.red||[]):(_tennisData.kohaku_teams?.white||[])).map(m=>m.name).filter(n=>n);
+    const usedInRound=new Set();
+    round.courts.forEach((c,idx)=>['red1','red2','white1','white2'].forEach(slot=>{ const n=c[slot]||''; if(!n)return; if(idx===ci&&slot.startsWith(color))return; usedInRound.add(n); }));
+    const typeLabel={男子D:'男子ダブルス',女子D:'女子ダブルス',混合D:'ミックスD'}[mt]||mt;
+    const pre=[court[`${color}1`],court[`${color}2`]].filter(n=>n);
+    const orig=_allParticipants;
+    _allParticipants=(_tennisParticipants||[]).filter(p=>teamNames.includes(p.name)&&(genderFilter===null||p.gender===genderFilter));
+    openPicker(`${color==='red'?'赤組':'白組'}ペアを選択（${typeLabel}・2名まで）`, pre, (names)=>{
+        _allParticipants=orig;
+        court[`${color}1`]=names[0]||''; court[`${color}2`]=names[1]||'';
+        document.getElementById(`matchCourts_${ri}`).innerHTML=renderMatchCourts(round.courts,ri); scheduleTennisSave();
+    }, [...usedInRound], false, 2);
+    _allParticipants=orig;
+}
+
+/* ---- 対戦表 自動生成 ---- */
+function openMatchAutoModal(){
+    const red=_tennisData.kohaku_teams?.red||[], white=_tennisData.kohaku_teams?.white||[];
+    if(red.length<2||white.length<2){ alert('先に紅白戦チーム分けで赤組・白組を各2名以上設定してください'); return; }
+    new bootstrap.Modal(document.getElementById('matchAutoModal')).show();
+}
+function genderOf(name){ const p=(_tennisParticipants||[]).find(x=>x.name===name); return p?p.gender:'male'; }
+
+/*
+ 対戦表自動生成
+  - 各コマ（試合）に複数コート。コートは指定種別。
+  - 同一人物が同じコマで複数コートに出ない。
+  - 連続コマに出る人は「同じ番号のコート」になるよう優先（2連続を同じコートで）。
+  - なるべく各人の試合間隔を空ける（休養が長い人を優先選出）。
+*/
+function execMatchAuto(){
+    const rounds=parseInt(document.getElementById('maRounds').value)||0;
+    const courts=parseInt(document.getElementById('maCourts').value)||0;
+    const type=document.getElementById('maType').value;
+    if(rounds<1||courts<1){ alert('コマ数・コート数を正しく入力してください'); return; }
+
+    const redAll=(_tennisData.kohaku_teams.red||[]).map(m=>m.name);
+    const whiteAll=(_tennisData.kohaku_teams.white||[]).map(m=>m.name);
+    const filt=(names)=>{ if(type==='男子D') return names.filter(n=>genderOf(n)==='male'); if(type==='女子D') return names.filter(n=>genderOf(n)==='female'); return names; };
+
+    const buildPool=(names)=>{
+        if(type==='混合D'){
+            return {males:names.filter(n=>genderOf(n)==='male'), females:names.filter(n=>genderOf(n)==='female'), mixed:true};
+        }
+        return {pool:filt(names), mixed:false};
+    };
+    const red=buildPool(redAll), white=buildPool(whiteAll);
+
+    const stats={}; [...redAll,...whiteAll].forEach(n=>stats[n]={count:0,last:-99,lastCourt:-1});
+
+    function pick(candidates, usedThisRound, ri, courtIdx, need){
+        const avail=(candidates||[]).filter(n=>!usedThisRound.has(n));
+        const score=(n)=>{
+            const rest=ri-stats[n].last;
+            let s=rest*10 - stats[n].count*3;
+            if(stats[n].last===ri-1 && stats[n].lastCourt===courtIdx) s+=1000; // 連続コマ同コート優先
+            return s;
+        };
+        avail.sort((a,b)=>score(b)-score(a));
+        return avail.slice(0,need);
+    }
+
+    const matches=[];
+    for(let ri=0; ri<rounds; ri++){
+        const round={round:`${ri+1}試合目`,courts:[]};
+        const usedThisRound=new Set();
+        for(let ci=0; ci<courts; ci++){
+            let r1='',r2='',w1='',w2='';
+            if(type==='混合D'){
+                r1=pick(red.males,usedThisRound,ri,ci,1)[0]||'';
+                r2=pick(red.females,usedThisRound,ri,ci,1)[0]||'';
+                w1=pick(white.males,usedThisRound,ri,ci,1)[0]||'';
+                w2=pick(white.females,usedThisRound,ri,ci,1)[0]||'';
+            } else {
+                const rp=pick(red.pool,usedThisRound,ri,ci,2); r1=rp[0]||''; r2=rp[1]||'';
+                const wp=pick(white.pool,usedThisRound,ri,ci,2); w1=wp[0]||''; w2=wp[1]||'';
+            }
+            [r1,r2,w1,w2].forEach(n=>{ if(n){ usedThisRound.add(n); stats[n].count++; stats[n].last=ri; stats[n].lastCourt=ci; } });
+            round.courts.push({type,red1:r1,red2:r2,white1:w1,white2:w2});
+        }
+        matches.push(round);
+    }
+
+    _tennisData.kohaku_matches=matches;
+    document.getElementById('matchList').innerHTML=renderMatches(matches);
+    bootstrap.Modal.getInstance(document.getElementById('matchAutoModal'))?.hide();
+    scheduleTennisSave();
+    showToast('対戦表を自動生成しました','success');
+}
+</script>
+
+<script>
+/* ============================================================
+   企画班分け（複数企画・各々に名前・会計アプリ同等のフル機能）
+   ============================================================ */
+let _planDivisions = [];
+let _planParticipants = [];
+let _planLoaded = false;
+let _planCurrentId = null;        // 選択中の企画ID
+let _planMembers = [];            // 選択中企画のメンバー（team_no含む）
+let _planConstraints = [];        // 選択中企画の制約
+let _planView = 'teams';          // 'teams' | 'list'
+let _planSort = { primary:{key:'team_no',dir:1}, secondary:{key:'name_kana',dir:1} };
+
+const PLAN_COLORS = ['#0d6efd','#198754','#dc3545','#fd7e14','#6f42c1','#0dcaf0','#d63384','#20c997','#ffc107','#6610f2'];
+
+let _planTimeSlots = [];   // 合宿のタイムスロット一覧（開催タイミング選択用）
+const PLAN_SLOT_LABELS = { outbound:'往路', morning:'午前', afternoon:'午後', banquet:'宴会', return:'復路' };
+function planSlotLabel(slot){
+    if(!slot || !slot.day_number) return '未設定';
+    return `${slot.day_number}日目 ${PLAN_SLOT_LABELS[slot.slot_type]||slot.slot_type||''}`;
+}
+
+function pEsc(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function planGradeNum(g){ if(g===null||g===undefined) return 98; const n=parseInt(g); if(isNaN(n)) return 98; if(n===0) return 99; return n; }
+function planGradeLabel(g){ if(g===0||g==='0') return 'OB/OG'; if(g===null||g===undefined||g==='') return '—'; return g+'年'; }
+function planGenderLabel(g){ return g==='male'?'男':(g==='female'?'女':'—'); }
+
+async function loadPlans(){
+    // 2回目以降（タブを開き直したとき）は読み込み済みデータで再描画する
+    if(_planLoaded){
+        renderPlansShell();
+        if(_planCurrentId) renderPlanDetail();
+        else if(_planDivisions.length) selectPlanDivision(_planDivisions[0].id);
+        return;
+    }
+    try{
+        const res=await fetch(`/api/camps/${CAMP_ID}/plans`);
+        const data=await res.json();
+        if(!data.success){ document.getElementById('plansArea').innerHTML='<div class="alert alert-danger">読み込みに失敗しました</div>'; return; }
+        _planDivisions=data.data.divisions||[];
+        _planParticipants=data.data.participants||[];
+        _planTimeSlots=data.data.time_slots||[];
+        _planLoaded=true;
+        renderPlansShell();
+        if(_planDivisions.length){ selectPlanDivision(_planDivisions[0].id); }
+    }catch(e){ document.getElementById('plansArea').innerHTML='<div class="alert alert-danger">通信エラー</div>'; }
+}
+
+function renderPlansShell(){
+    document.getElementById('plansArea').innerHTML=`
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0">企画班分け</h5>
+</div>
+<div class="card mb-3">
+    <div class="card-header fw-bold d-flex justify-content-between align-items-center">
+        企画一覧
+        <button class="btn btn-outline-primary btn-sm" onclick="addPlanDivision()">＋ 企画を追加</button>
+    </div>
+    <div class="card-body">
+        <div id="planTabs" class="d-flex gap-2 flex-wrap mb-2"></div>
+        <p class="text-muted small mb-0" id="planEmptyHint" style="display:none;">企画がありません。「＋ 企画を追加」で作成してください（例：夜レク、BBQ）。</p>
+    </div>
+</div>
+<div id="planDetailArea"></div>
+`;
+    renderPlanTabs();
+}
+
+function renderPlanTabs(){
+    const wrap=document.getElementById('planTabs');
+    document.getElementById('planEmptyHint').style.display = _planDivisions.length?'none':'block';
+    wrap.innerHTML=_planDivisions.map(d=>{
+        const active=d.id===_planCurrentId;
+        const timing = d.day_number ? ` <span class="badge ${active?'bg-light text-dark':'bg-secondary'}">${pEsc(planSlotLabel(d))}</span>` : '';
+        return `<button class="btn btn-sm ${active?'btn-primary':'btn-outline-secondary'}" onclick="selectPlanDivision(${d.id})">${pEsc(d.name)}${timing}</button>`;
+    }).join('');
+}
+
+async function addPlanDivision(){
+    const name=prompt('企画名を入力してください（例：夜レク、BBQ班）','新しい企画');
+    if(name===null) return;
+    try{
+        const res=await fetch(`/api/camps/${CAMP_ID}/plans`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.trim()||'新しい企画'})});
+        const data=await res.json();
+        if(data.success){ _planDivisions.push(data.data); renderPlanTabs(); selectPlanDivision(data.data.id); }
+        else alert(data.error?.message||'作成に失敗しました');
+    }catch(e){ alert('通信エラーが発生しました'); }
+}
+
+async function renamePlanDivision(){
+    if(!_planCurrentId) return;
+    const cur=_planDivisions.find(d=>d.id===_planCurrentId);
+    const name=prompt('企画名を変更',cur?cur.name:'');
+    if(name===null||!name.trim()) return;
+    try{
+        const res=await fetch(`/api/plans/${_planCurrentId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name.trim()})});
+        const data=await res.json();
+        if(data.success){ if(cur) cur.name=name.trim(); renderPlanTabs(); renderPlanDetail(); }
+        else alert(data.error?.message||'変更に失敗しました');
+    }catch(e){ alert('通信エラーが発生しました'); }
+}
+
+async function deletePlanDivision(){
+    if(!_planCurrentId) return;
+    const cur=_planDivisions.find(d=>d.id===_planCurrentId);
+    if(!confirm(`企画「${cur?cur.name:''}」を削除しますか？班分けも削除されます。`)) return;
+    try{
+        const res=await fetch(`/api/plans/${_planCurrentId}`,{method:'DELETE'});
+        const data=await res.json();
+        if(data.success){
+            _planDivisions=_planDivisions.filter(d=>d.id!==_planCurrentId);
+            _planCurrentId=null; _planMembers=[]; _planConstraints=[];
+            renderPlanTabs();
+            if(_planDivisions.length) selectPlanDivision(_planDivisions[0].id);
+            else document.getElementById('planDetailArea').innerHTML='';
+        } else alert(data.error?.message||'削除に失敗しました');
+    }catch(e){ alert('通信エラーが発生しました'); }
+}
+
+async function selectPlanDivision(id){
+    _planCurrentId=id;
+    renderPlanTabs();
+    document.getElementById('planDetailArea').innerHTML='<div class="text-center p-4 text-muted">読み込み中...</div>';
+    try{
+        const res=await fetch(`/api/plans/${id}`);
+        const data=await res.json();
+        if(!data.success){ document.getElementById('planDetailArea').innerHTML='<div class="alert alert-danger">読み込みに失敗しました</div>'; return; }
+        _planMembers=(data.data.members||[]).map(m=>({...m, team_no:(m.team_no===null||m.team_no===undefined)?null:parseInt(m.team_no)}));
+        _planConstraints=data.data.constraints||[];
+        if(data.data.participants) _planParticipants=data.data.participants;
+        // 最新の division（time_slot 情報付き）を反映
+        if(data.data.division){ const i=_planDivisions.findIndex(d=>d.id===id); if(i>=0) _planDivisions[i]=data.data.division; }
+        renderPlanDetail();
+    }catch(e){ document.getElementById('planDetailArea').innerHTML='<div class="alert alert-danger">通信エラー</div>'; }
+}
+
+function renderPlanDetail(){
+    const cur=_planDivisions.find(d=>d.id===_planCurrentId);
+    if(!cur){ document.getElementById('planDetailArea').innerHTML=''; return; }
+    document.getElementById('planDetailArea').innerHTML=`
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="fw-bold">${pEsc(cur.name)}</span>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary btn-sm" onclick="renamePlanDivision()"><i class="bi bi-pencil"></i> 名前変更</button>
+            <button class="btn btn-outline-danger btn-sm" onclick="deletePlanDivision()"><i class="bi bi-trash"></i> 企画削除</button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="row g-2 align-items-end">
+            <div class="col-md-5">
+                <label class="form-label small mb-1">開催タイミング（いつ）</label>
+                <select class="form-select form-select-sm" id="planTimeSlotSelect" onchange="changePlanTimeSlot(this.value)">
+                    <option value="">未設定</option>
+                    ${_planTimeSlots.map(ts=>`<option value="${ts.id}" ${parseInt(cur.time_slot_id)===parseInt(ts.id)?'selected':''}>${pEsc(planSlotLabel(ts))}</option>`).join('')}
+                </select>
+            </div>
+            <div class="col-md-7">
+                <span class="text-muted small">
+                    その時点で合宿に参加している人（${_planMembers.length}名）を自動的に対象にします。
+                    <button class="btn btn-outline-secondary btn-sm py-0 ms-1" onclick="resyncPlanMembers()" title="参加者情報を変更した場合に最新化"><i class="bi bi-arrow-repeat"></i> 参加者を最新に</button>
+                </span>
+                ${_planTimeSlots.length===0?'<div class="text-danger small mt-1">タイムスロットが未設定です。先に「日程設定」タブでコマを設定してください。</div>':''}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 自動振り分け -->
+<div class="card mb-3">
+    <div class="card-header fw-bold">班の自動振り分け</div>
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3"><label class="form-label small">班の数</label><input type="number" class="form-control form-control-sm" id="planTeamCount" value="4" min="1" max="50"></div>
+            <div class="col-md-6">
+                <label class="form-label small d-block">均等にする基準</label>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="planBalGrade" checked><label class="form-check-label small" for="planBalGrade">学年</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="planBalGender" checked><label class="form-check-label small" for="planBalGender">性別</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="planBalFaculty"><label class="form-check-label small" for="planBalFaculty">学科</label></div>
+            </div>
+            <div class="col-md-3 d-grid"><button class="btn btn-primary btn-sm" onclick="autoAssignPlan()">自動振り分け</button></div>
+        </div>
+        <div class="form-text mt-1">制約（絶対一緒／絶対別）を守りつつ、選択した基準が各班でばらけるよう割り当てます。学科データのない参加者は学科分散の対象外です。</div>
+    </div>
+</div>
+
+<!-- 制約 -->
+<div class="card mb-3">
+    <div class="card-header fw-bold">組み合わせの制約</div>
+    <div class="card-body">
+        <div class="row g-2 align-items-end mb-3">
+            <div class="col-md-4"><label class="form-label small">メンバー1</label><select class="form-select form-select-sm" id="planConA"></select></div>
+            <div class="col-md-4"><label class="form-label small">メンバー2</label><select class="form-select form-select-sm" id="planConB"></select></div>
+            <div class="col-md-2"><label class="form-label small">種別</label><select class="form-select form-select-sm" id="planConType"><option value="together">絶対一緒</option><option value="apart">絶対別</option></select></div>
+            <div class="col-md-2 d-grid"><button class="btn btn-outline-primary btn-sm" onclick="addPlanConstraint()">追加</button></div>
+        </div>
+        <div id="planConstraintsList"></div>
+    </div>
+</div>
+
+<!-- 班割り -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <span class="fw-bold">班割り</span>
+            <div class="btn-group btn-group-sm">
+                <button class="btn ${_planView==='teams'?'btn-primary':'btn-outline-primary'}" id="planTeamViewBtn" onclick="setPlanView('teams')">班ビュー</button>
+                <button class="btn ${_planView==='list'?'btn-primary':'btn-outline-primary'}" id="planListViewBtn" onclick="setPlanView('list')">一覧ビュー</button>
+            </div>
+        </div>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            <div id="planSortControls" class="align-items-center gap-2 flex-wrap" style="display:${_planView==='list'?'flex':'none'};">
+                <div class="input-group input-group-sm" style="width:auto;">
+                    <span class="input-group-text">並べ替え</span>
+                    <select class="form-select form-select-sm" id="planSortPrimary" onchange="applyPlanSort()" style="width:auto;">
+                        <option value="team_no">班番号</option><option value="name_kana">カナ順</option><option value="grade">学年</option><option value="gender">性別</option><option value="faculty">学部</option>
+                    </select>
+                    <button class="btn btn-outline-secondary" id="planSortPrimaryDir" onclick="togglePlanSortDir('primary')">↑</button>
+                </div>
+            </div>
+            <span id="planSaveStatus" class="small text-muted"></span>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div id="planSummary" class="px-3 pt-3"></div>
+        <div id="planTeamsContainer"></div>
+    </div>
+</div>
+`;
+    // sort select の初期値反映
+    const ps=document.getElementById('planSortPrimary'); if(ps) ps.value=_planSort.primary.key;
+    renderPlanConstraints();
+    renderPlanConstraintSelects();
+    renderPlanTeams();
+}
+
+/* ---- 開催タイミング設定（参加者は自動同期） ---- */
+async function changePlanTimeSlot(value){
+    const timeSlotId = (value==='' || value===null) ? null : parseInt(value);
+    try{
+        const res=await fetch(`/api/plans/${_planCurrentId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({time_slot_id:timeSlotId})});
+        const data=await res.json();
+        if(data.success){
+            if(data.data.division){ const i=_planDivisions.findIndex(d=>d.id===_planCurrentId); if(i>=0) _planDivisions[i]=data.data.division; }
+            _planMembers=(data.data.members||[]).map(m=>({...m, team_no:(m.team_no===null||m.team_no===undefined)?null:parseInt(m.team_no)}));
+            renderPlanDetail();
+            showToast('開催タイミングを設定し、参加者を更新しました','success');
+        } else alert(data.error?.message||'更新に失敗しました');
+    }catch(e){ alert('通信エラーが発生しました'); }
+}
+
+async function resyncPlanMembers(){
+    if(!_planCurrentId) return;
+    try{
+        const res=await fetch(`/api/plans/${_planCurrentId}/resync`,{method:'POST'});
+        const data=await res.json();
+        if(data.success){
+            _planMembers=(data.data.members||[]).map(m=>({...m, team_no:(m.team_no===null||m.team_no===undefined)?null:parseInt(m.team_no)}));
+            renderPlanDetail();
+            showToast('参加者を最新の状態に更新しました','success');
+        } else alert(data.error?.message||'更新に失敗しました');
+    }catch(e){ alert('通信エラーが発生しました'); }
+}
+
+/* ---- 制約 ---- */
+function renderPlanConstraintSelects(){
+    const opts='<option value="">選択してください</option>'+[..._planMembers]
+        .sort((a,b)=>(a.name_kana||a.name||'').localeCompare(b.name_kana||b.name||'','ja'))
+        .map(m=>`<option value="${m.participant_id}">${pEsc(m.name)}（${pEsc(planGradeLabel(m.grade))}）</option>`).join('');
+    const a=document.getElementById('planConA'), b=document.getElementById('planConB');
+    if(a) a.innerHTML=opts; if(b) b.innerHTML=opts;
+}
+function renderPlanConstraints(){
+    const el=document.getElementById('planConstraintsList'); if(!el) return;
+    if(!_planConstraints.length){ el.innerHTML='<div class="text-muted small">制約はまだありません</div>'; return; }
+    el.innerHTML=_planConstraints.map(c=>{
+        const badge=c.type==='together'?'<span class="badge bg-success">絶対一緒</span>':'<span class="badge bg-danger">絶対別</span>';
+        return `<span class="badge bg-light text-dark border me-2 mb-2 p-2">${badge}<span class="ms-1">${pEsc(c.participant_a_name)} と ${pEsc(c.participant_b_name)}</span><button class="btn-close ms-2" style="font-size:.6rem;vertical-align:middle;" onclick="deletePlanConstraint(${c.id})"></button></span>`;
+    }).join('');
+}
+async function addPlanConstraint(){
+    const a=document.getElementById('planConA').value, b=document.getElementById('planConB').value, type=document.getElementById('planConType').value;
+    if(!a||!b){ alert('2名のメンバーを選択してください'); return; }
+    if(a===b){ alert('異なるメンバーを選択してください'); return; }
+    try{
+        const res=await fetch(`/api/plans/${_planCurrentId}/constraints`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({participant_a_id:parseInt(a),participant_b_id:parseInt(b),type})});
+        const data=await res.json();
+        if(data.success){ _planConstraints=data.data.constraints||[]; renderPlanConstraints(); showToast('制約を追加しました','success'); }
+        else alert(data.error?.message||'追加に失敗しました');
+    }catch(e){ alert('通信エラーが発生しました'); }
+}
+async function deletePlanConstraint(id){
+    if(!confirm('この制約を削除しますか？')) return;
+    try{
+        const res=await fetch(`/api/plans/${_planCurrentId}/constraints/${id}`,{method:'DELETE'});
+        const data=await res.json();
+        if(data.success){ _planConstraints=_planConstraints.filter(c=>parseInt(c.id)!==id); renderPlanConstraints(); showToast('制約を削除しました','success'); }
+        else alert(data.error?.message||'削除に失敗しました');
+    }catch(e){ alert('通信エラーが発生しました'); }
+}
+
+/* ---- 自動振り分け ---- */
+function autoAssignPlan(){
+    const teamCount=parseInt(document.getElementById('planTeamCount').value);
+    if(!teamCount||teamCount<1){ alert('班の数を正しく入力してください'); return; }
+    if(!_planMembers.length){ alert('参加者がいません。上の「開催タイミング」を設定すると、その時点の参加者が自動で対象になります。'); return; }
+    const useGrade=document.getElementById('planBalGrade').checked;
+    const useGender=document.getElementById('planBalGender').checked;
+    const useFaculty=document.getElementById('planBalFaculty').checked;
+
+    const idToM={}; _planMembers.forEach(m=>{ idToM[m.participant_id]=m; });
+    const parent={}; _planMembers.forEach(m=>{ parent[m.participant_id]=m.participant_id; });
+    const find=(x)=>{ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; };
+    const union=(a,b)=>{ const ra=find(a),rb=find(b); if(ra!==rb) parent[ra]=rb; };
+    _planConstraints.forEach(c=>{ if(c.type==='together'&&idToM[c.participant_a_id]&&idToM[c.participant_b_id]) union(parseInt(c.participant_a_id),parseInt(c.participant_b_id)); });
+
+    const clusters={}; _planMembers.forEach(m=>{ const r=find(m.participant_id); (clusters[r]=clusters[r]||[]).push(m); });
+    let clusterList=Object.values(clusters);
+
+    const apart={}; _planConstraints.forEach(c=>{ if(c.type==='apart'){ const a=parseInt(c.participant_a_id),b=parseInt(c.participant_b_id); (apart[a]=apart[a]||new Set()).add(b); (apart[b]=apart[b]||new Set()).add(a); } });
+
+    clusterList.sort((a,b)=>b.length-a.length);
+    const teams=Array.from({length:teamCount},()=>[]);
+    const apartConflict=(t,cl)=>{ for(const m of teams[t]) for(const cm of cl){ if(apart[m.participant_id]&&apart[m.participant_id].has(cm.participant_id)) return true; } return false; };
+    // バランス用コスト: 各基準値（性別なら male/female を別々に）が
+    // 配置後に各班へ何人になるかの二乗和を最小化する。
+    // 二乗和は特定の値が1つの班に偏るほど急増するため、
+    // 少数派の値（例: 人数の少ない性別）も各班へ分散されやすい。
+    const cost=(t,cl)=>{
+        let c=Math.pow(teams[t].length+cl.length,2); // 人数均等
+        const bal=(valFn)=>{ const o={}; teams[t].forEach(m=>{const v=valFn(m);o[v]=(o[v]||0)+1;}); cl.forEach(m=>{const v=valFn(m);o[v]=(o[v]||0)+1;}); return Object.values(o).reduce((s,n)=>s+n*n,0); };
+        if(useGrade)   c+=bal(m=>planGradeNum(m.grade));
+        if(useGender)  c+=bal(m=>m.gender||'__none__');
+        if(useFaculty) c+=bal(m=>m.faculty||'__none__');
+        return c;
+    };
+    let unplaced=[];
+    clusterList.forEach(cl=>{
+        let best=-1,bc=Infinity;
+        for(let t=0;t<teamCount;t++){ if(apartConflict(t,cl)) continue; const co=cost(t,cl); if(co<bc){bc=co;best=t;} }
+        if(best===-1) unplaced.push(cl); else { cl.forEach(m=>m.team_no=best+1); teams[best].push(...cl); }
+    });
+    unplaced.forEach(cl=>{ let mn=0; for(let t=1;t<teamCount;t++) if(teams[t].length<teams[mn].length) mn=t; cl.forEach(m=>m.team_no=mn+1); teams[mn].push(...cl); });
+
+    renderPlanTeams();
+    savePlanTeams();
+    showToast(unplaced.length?'一部、絶対別の制約を満たせない班割りになりました':'自動振り分けしました','success');
+}
+
+/* ---- ビュー切替・ソート ---- */
+function setPlanView(v){
+    _planView=v;
+    document.getElementById('planTeamViewBtn').className=v==='teams'?'btn btn-primary':'btn btn-outline-primary';
+    document.getElementById('planListViewBtn').className=v==='list'?'btn btn-primary':'btn btn-outline-primary';
+    document.getElementById('planSortControls').style.display=v==='list'?'flex':'none';
+    renderPlanTeams();
+}
+function applyPlanSort(){ _planSort.primary.key=document.getElementById('planSortPrimary').value; renderPlanTeams(); }
+function togglePlanSortDir(){ _planSort.primary.dir*=-1; document.getElementById('planSortPrimaryDir').textContent=_planSort.primary.dir===1?'↑':'↓'; renderPlanTeams(); }
+function planCompare(a,b,key){
+    if(key==='team_no'){ const ta=a.team_no===null?Infinity:a.team_no, tb=b.team_no===null?Infinity:b.team_no; return ta-tb; }
+    if(key==='name_kana') return (a.name_kana||a.name||'').localeCompare(b.name_kana||b.name||'','ja');
+    if(key==='grade') return planGradeNum(a.grade)-planGradeNum(b.grade);
+    if(key==='gender'){ const o={male:1,female:2}; return (o[a.gender]||3)-(o[b.gender]||3); }
+    if(key==='faculty') return (a.faculty||'').localeCompare(b.faculty||'','ja');
+    return 0;
+}
+
+function planSummaryHtml(){
+    const counts={}; _planMembers.forEach(m=>{ const k=m.team_no===null?'未割り当て':`${m.team_no}班`; counts[k]=(counts[k]||0)+1; });
+    return '<div class="mb-2">'+Object.keys(counts).sort((a,b)=>{ if(a==='未割り当て')return 1; if(b==='未割り当て')return -1; return parseInt(a)-parseInt(b); })
+        .map(k=>{ const cls=k==='未割り当て'?'bg-secondary':'bg-primary'; return `<span class="badge ${cls} me-1 mb-1">${pEsc(k)}: ${counts[k]}人</span>`; }).join('')+'</div>';
+}
+
+function renderPlanTeams(){
+    const summary=document.getElementById('planSummary'), container=document.getElementById('planTeamsContainer');
+    if(!container) return;
+    if(!_planMembers.length){ summary.innerHTML=''; container.innerHTML='<div class="text-center p-4 text-muted">参加者がいません。上の「開催タイミング」を設定すると、その時点の参加者が自動で対象になります。</div>'; return; }
+    summary.innerHTML=planSummaryHtml();
+    if(_planView==='teams') renderPlanCards(container); else renderPlanList(container);
+}
+
+function renderPlanList(container){
+    const sorted=[..._planMembers].sort((a,b)=>{
+        let c=planCompare(a,b,_planSort.primary.key); if(c!==0) return c*_planSort.primary.dir;
+        if(_planSort.secondary.key){ c=planCompare(a,b,_planSort.secondary.key); if(c!==0) return c*_planSort.secondary.dir; }
+        return (a.name_kana||a.name||'').localeCompare(b.name_kana||b.name||'','ja');
+    });
+    const rows=sorted.map((m,i)=>`
+    <tr>
+        <td>${i+1}</td>
+        <td class="fw-semibold">${pEsc(m.name)}</td>
+        <td>${pEsc(planGradeLabel(m.grade))}</td>
+        <td>${pEsc(planGenderLabel(m.gender))}</td>
+        <td class="small text-muted">${pEsc(m.faculty||'—')}</td>
+        <td class="small text-muted">${pEsc(m.department||'—')}</td>
+        <td style="width:90px;"><input type="number" class="form-control form-control-sm" min="1" value="${m.team_no??''}" placeholder="—" onchange="updatePlanTeamNo(${m.id},this.value)"></td>
+    </tr>`).join('');
+    container.innerHTML=`<table class="table table-hover mb-0 align-middle"><thead class="table-light"><tr><th>#</th><th>氏名</th><th>学年</th><th>性別</th><th>学部</th><th>学科</th><th>班番号</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderPlanCards(container){
+    const groups={}, unassigned=[];
+    _planMembers.forEach(m=>{ if(m.team_no===null) unassigned.push(m); else (groups[m.team_no]=groups[m.team_no]||[]).push(m); });
+    const teamNos=Object.keys(groups).map(Number).sort((a,b)=>a-b);
+    if(!teamNos.length){ container.innerHTML='<div class="text-center p-4 text-muted">まだ班が割り当てられていません。「自動振り分け」または一覧ビューで班番号を入力してください。</div>'; return; }
+    const moveOpts=(cur)=>{ let o=`<option value="" ${cur===null?'selected':''}>未</option>`; teamNos.forEach(n=>{ o+=`<option value="${n}" ${cur===n?'selected':''}>${n}班</option>`; }); return o; };
+    const chip=(m)=>{ const gc=m.gender==='male'?'text-primary':(m.gender==='female'?'text-danger':'text-muted'); return `
+        <div class="d-flex justify-content-between align-items-center py-1 px-2 border-bottom">
+            <div class="text-truncate"><span class="fw-semibold">${pEsc(m.name)}</span><span class="small text-muted ms-1">${pEsc(planGradeLabel(m.grade))}</span><span class="small ${gc} ms-1">${planGenderLabel(m.gender)}</span></div>
+            <select class="form-select form-select-sm" style="width:auto;" onchange="updatePlanTeamNo(${m.id},this.value)">${moveOpts(m.team_no)}</select>
+        </div>`; };
+    const breakdown=(ms)=>{ const males=ms.filter(m=>m.gender==='male').length, females=ms.filter(m=>m.gender==='female').length; const gc={}; ms.forEach(m=>{const g=planGradeLabel(m.grade); gc[g]=(gc[g]||0)+1;}); const gb=Object.keys(gc).sort((a,b)=>planGradeNum(a.replace('年','').replace('OB/OG','0'))-planGradeNum(b.replace('年','').replace('OB/OG','0'))).map(g=>`<span class="badge bg-light text-dark border me-1">${pEsc(g)}×${gc[g]}</span>`).join(''); return `<div class="small mt-1"><span class="text-primary">男${males}</span> / <span class="text-danger">女${females}</span> <span class="ms-2">${gb}</span></div>`; };
+    let html='<div class="row g-3 p-3">';
+    teamNos.forEach(no=>{ const color=PLAN_COLORS[(no-1)%PLAN_COLORS.length]; const ms=[...groups[no]].sort((a,b)=>(a.name_kana||a.name||'').localeCompare(b.name_kana||b.name||'','ja'));
+        html+=`<div class="col-12 col-md-6 col-lg-4"><div class="card h-100 shadow-sm">
+            <div class="card-header text-white d-flex justify-content-between align-items-center" style="background:${color};"><span class="fw-bold fs-5">${no}班</span><span class="badge bg-light text-dark">${ms.length}人</span></div>
+            <div class="card-body p-0">${ms.map(chip).join('')}</div>
+            <div class="card-footer py-2" style="border-top:2px solid ${color};">${breakdown(ms)}</div>
+        </div></div>`; });
+    if(unassigned.length){ const ms=[...unassigned].sort((a,b)=>(a.name_kana||a.name||'').localeCompare(b.name_kana||b.name||'','ja'));
+        html+=`<div class="col-12"><div class="card border-secondary"><div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center"><span class="fw-bold">未割り当て</span><span class="badge bg-light text-dark">${unassigned.length}人</span></div><div class="card-body p-0">${ms.map(chip).join('')}</div></div></div>`; }
+    html+='</div>';
+    container.innerHTML=html;
+}
+
+function updatePlanTeamNo(memberId,value){
+    const m=_planMembers.find(x=>parseInt(x.id)===parseInt(memberId)); if(!m) return;
+    m.team_no=(value===''||value===null)?null:parseInt(value);
+    if(_planView==='teams') renderPlanTeams(); else { document.getElementById('planSummary').innerHTML=planSummaryHtml(); }
+    schedulePlanSave();
+}
+
+/* ---- 自動保存 ---- */
+let _planSaveTimer=null;
+function setPlanSaveStatus(t,cls){ const el=document.getElementById('planSaveStatus'); if(el) el.innerHTML=`<span class="${cls||'text-muted'}">${pEsc(t)}</span>`; }
+function schedulePlanSave(){ setPlanSaveStatus('未保存の変更があります…','text-muted'); clearTimeout(_planSaveTimer); _planSaveTimer=setTimeout(savePlanTeams,800); }
+async function savePlanTeams(){
+    if(_planSaveTimer){ clearTimeout(_planSaveTimer); _planSaveTimer=null; }
+    if(!_planCurrentId) return;
+    const assignments={}; _planMembers.forEach(m=>{ assignments[m.id]=m.team_no; });
+    setPlanSaveStatus('保存中…','text-muted');
+    try{
+        const res=await fetch(`/api/plans/${_planCurrentId}/teams`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({assignments})});
+        const data=await res.json();
+        setPlanSaveStatus(data.success?'✓ 自動保存しました':'保存に失敗しました', data.success?'text-success':'text-danger');
+    }catch(e){ setPlanSaveStatus('通信エラー（未保存）','text-danger'); }
 }
 </script>

@@ -57,7 +57,7 @@ class ExpeditionCar
             [
                 $expedition_id,
                 $data['name'] ?? '',
-                $data['capacity'] ?? 5,
+                $data['capacity'] ?? 6,
                 $data['rental_fee'] ?? 0,
                 $data['highway_fee'] ?? 0,
                 $tripType,
@@ -211,7 +211,7 @@ class ExpeditionCar
      *
      * 戻り値: ['cars' => [...], 'warnings' => [...]]
      */
-    public static function autoAssignOutbound(int $expedition_id, array $capacities = [], array $soloBookers = []): array
+    public static function autoAssignOutbound(int $expedition_id, array $capacities = [], array $soloBookers = [], array $selectedBookers = [], array $pinnedMembers = []): array
     {
         $db = Database::getInstance();
 
@@ -226,12 +226,14 @@ class ExpeditionCar
             $db->execute("DELETE FROM expedition_cars        WHERE id = ?",     [$ec['id']]);
         }
 
-        // 車に乗る参加者を全員取得（授業終了時限順）
+        // 車に乗る参加者を全員取得（授業終了時限順）。
+        // 車を予約する人（can_book_car=1）は乗車扱いが漏れていても必ず含める
+        // （車を予約する＝その車に乗るため）。
         $participants = $db->fetchAll(
             "SELECT ep.*, m.name_kanji, m.name_kana
              FROM expedition_participants ep
              JOIN members m ON m.id = ep.member_id
-             WHERE ep.expedition_id = ? AND ep.is_joining_car = 1
+             WHERE ep.expedition_id = ? AND (ep.is_joining_car = 1 OR ep.can_book_car = 1)
              ORDER BY COALESCE(ep.friday_last_class, 0) ASC, m.name_kana ASC",
             [$expedition_id]
         );
@@ -247,23 +249,39 @@ class ExpeditionCar
             return ['cars' => [], 'warnings' => ['車を予約できる人が登録されていません（申し込み時に「車の予約をする」を選択した人が必要です）']];
         }
 
+        // 画面で「使用する」と選択されたドライバーのみに絞り込む
+        // （車を借りられる人全員が実際に車を出すとは限らないため）。
+        // 未指定（空）の場合は後方互換として全員を対象にする。
+        if (!empty($selectedBookers)) {
+            $selectedIds = array_map('intval', $selectedBookers);
+            $bookers = array_values(array_filter(
+                $bookers,
+                fn($p) => in_array((int)$p['member_id'], $selectedIds, true)
+            ));
+            if (empty($bookers)) {
+                return ['cars' => [], 'warnings' => ['使用する車が選択されていません']];
+            }
+        }
+
         $warnings  = [];
         $cars      = []; // [['id' => ..., 'name' => ..., 'departure_class' => ..., 'capacity' => 5], ...]
         $sortOrder = 1;
 
         // booker ごとに車を作成してドライバー登録
+        // 車の出発時限（departure_class）はドライバー自身の時限では決めない。
+        // 早出のドライバーでも遅い人を乗せられるよう、乗車者を割り当て切ってから
+        // 「その車に乗る人の friday_last_class の最大値」で後段で確定する。
         foreach ($bookers as $booker) {
             $carName  = $booker['name_kanji'] . '車';
-            $depClass = $booker['friday_last_class'] !== null ? (int)$booker['friday_last_class'] : null;
 
-            $capacity = isset($capacities[$booker['member_id']]) ? (int)$capacities[$booker['member_id']] : 5;
+            $capacity = isset($capacities[$booker['member_id']]) ? (int)$capacities[$booker['member_id']] : 6;
             $capacity = max(1, $capacity);
 
             $carId = $db->insert(
                 "INSERT INTO expedition_cars
                  (expedition_id, name, capacity, rental_fee, highway_fee, trip_type, departure_class, sort_order)
-                 VALUES (?, ?, ?, 0, 0, 'outbound', ?, ?)",
-                [$expedition_id, $carName, $capacity, $depClass, $sortOrder++]
+                 VALUES (?, ?, ?, 0, 0, 'outbound', NULL, ?)",
+                [$expedition_id, $carName, $capacity, $sortOrder++]
             );
 
             // booker をドライバーとして登録
@@ -275,83 +293,162 @@ class ExpeditionCar
             );
 
             $cars[] = [
-                'id'              => $carId,
-                'name'            => $carName,
-                'departure_class' => $depClass,
-                'capacity'        => $capacity,
-                'booker_id'       => (int)$booker['member_id'],
+                'id'        => $carId,
+                'name'      => $carName,
+                'capacity'  => $capacity,
+                'booker_id' => (int)$booker['member_id'],
+                // この車に乗る人の friday_last_class 最大値（ドライバー自身から初期化）
+                'max_class' => (int)($booker['friday_last_class'] ?? 0),
             ];
         }
 
-        // booker 以外のドライバー能力がある参加者をサブドライバー候補プールに
-        $bookerIds     = array_map(fn($b) => (int)$b['member_id'], $bookers);
-        $subDriverPool = array_values(array_filter($participants, function ($p) use ($bookerIds) {
-            return !in_array((int)$p['member_id'], $bookerIds)
-                && in_array($p['driver_type'] ?? 'none', ['driver', 'sub_driver']);
-        }));
-        $assignedSubIds = [];
+        // booker 以外のドライバー能力がある参加者（＝サブドライバー候補）を把握する。
+        // サブドライバーは事前固定せず、待ち時間最適化の中で配置する（時限を考慮するため）。
+        $bookerIds = array_map(fn($b) => (int)$b['member_id'], $bookers);
+        // member_id => 運転可能か（driver / sub_driver の役割を持つ。booker 以外）
+        $driverCapable = [];
+        foreach ($participants as $p) {
+            $mid = (int)$p['member_id'];
+            if (in_array($mid, $bookerIds, true)) continue; // booker は自分の車のドライバー
+            $driverCapable[$mid] = in_array($p['driver_type'] ?? 'none', ['driver', 'sub_driver'], true);
+        }
 
-        // 各車にサブドライバーを自動割り当て（solo_bookers 指定の車はスキップ）
-        foreach ($cars as &$car) {
-            if (in_array($car['booker_id'], $soloBookers)) continue;
-            foreach ($subDriverPool as $sd) {
-                if (in_array((int)$sd['member_id'], $assignedSubIds)) continue;
+        // booker を除いた参加者を乗客として最適配置する（サブドライバー候補も含む）。
+        $preAssigned = $bookerIds;
+        $unassigned  = array_values(array_filter($participants, fn($p) => !in_array((int)$p['member_id'], $preAssigned)));
+
+        // 現在の乗車人数をメモリ上で追跡（DB問い合わせを減らす）
+        $carCounts = [];
+        foreach ($cars as $car) {
+            $carCounts[$car['id']] = (int)$db->fetch(
+                "SELECT COUNT(*) as cnt FROM expedition_car_members WHERE car_id = ?",
+                [$car['id']]
+            )['cnt'];
+        }
+
+        // 固定指定によって運転可能者が乗った車（carIdx => true）。運転者要件を満たすとみなす。
+        $pinnedDriverCars = [];
+
+        // 乗員の固定指定を先に処理する（指定された人を、指定された車のドライバーの車へ固定）。
+        // car_owner_id（ドライバーの member_id）から対応する車を引く。
+        if (!empty($pinnedMembers)) {
+            $pinnedAssigned = [];
+            foreach ($pinnedMembers as $memberId => $carOwnerId) {
+                $memberId   = (int)$memberId;
+                $carOwnerId = (int)$carOwnerId;
+
+                // 既にドライバー/サブドライバー等で配置済みの人はスキップ
+                if (in_array($memberId, $preAssigned, true)) continue;
+
+                // 固定先の車を探す（booker_id == car_owner_id）
+                $targetIdx = null;
+                foreach ($cars as $idx => $c) {
+                    if ((int)$c['booker_id'] === $carOwnerId) { $targetIdx = $idx; break; }
+                }
+                if ($targetIdx === null) continue; // 使用しない車などに指定された → 無視（通常割当へ）
+
+                // 固定対象の参加者データを取得
+                $person = null;
+                foreach ($participants as $p) {
+                    if ((int)$p['member_id'] === $memberId) { $person = $p; break; }
+                }
+                if ($person === null) continue; // 車に乗らない人など → 無視
+
+                $car = $cars[$targetIdx];
+
+                // 定員超過なら固定できない → 警告して通常割当に回す
+                if ($carCounts[$car['id']] >= $car['capacity']) {
+                    $warnings[] = "【{$person['name_kanji']}】「{$car['name']}」が満席のため固定できませんでした（自動割り当てに回します）";
+                    continue;
+                }
+
+                $personClass = (int)($person['friday_last_class'] ?? 0);
+                $role = 'passenger';
+                if (($person['driver_type'] ?? 'none') === 'driver')     $role = 'driver';
+                if (($person['driver_type'] ?? 'none') === 'sub_driver') $role = 'sub_driver';
+
                 $db->insert(
                     "INSERT INTO expedition_car_members (car_id, member_id, role, is_excluded, sort_order)
-                     VALUES (?, ?, 'sub_driver', 0, 1)",
-                    [$car['id'], $sd['member_id']]
+                     VALUES (?, ?, ?, 0, ?)",
+                    [$car['id'], $memberId, $role, $carCounts[$car['id']]]
                 );
-                $assignedSubIds[] = (int)$sd['member_id'];
-                break;
-            }
-        }
-        unset($car);
+                $carCounts[$car['id']]++;
+                $cars[$targetIdx]['max_class'] = max($cars[$targetIdx]['max_class'], $personClass);
+                $pinnedAssigned[] = $memberId;
 
-        // booker + 割り当て済みサブドライバーを除いた参加者を乗客として配置
-        $preAssigned = array_unique(array_merge($bookerIds, $assignedSubIds));
-        $unassigned  = array_values(array_filter($participants, fn($p) => !in_array((int)$p['member_id'], $preAssigned)));
-        $lastCar    = end($cars);
-
-        foreach ($unassigned as $participant) {
-            $personClass = (int)($participant['friday_last_class'] ?? 0);
-            $targetCar   = null;
-
-            // departure_class >= personClass の最も早い車（空席あり）を探す
-            foreach ($cars as $car) {
-                $carDep = $car['departure_class'] !== null ? (int)$car['departure_class'] : 99;
-                if ($carDep >= $personClass) {
-                    $currentCount = (int)$db->fetch(
-                        "SELECT COUNT(*) as cnt FROM expedition_car_members WHERE car_id = ?",
-                        [$car['id']]
-                    )['cnt'];
-                    if ($currentCount < $car['capacity']) {
-                        $targetCar = $car;
-                        break;
-                    }
+                // 固定された人が運転可能なら、その車の運転者要件を満たす
+                if ($role === 'driver' || $role === 'sub_driver') {
+                    $pinnedDriverCars[$targetIdx] = true;
                 }
             }
 
-            // 適合する車がない or 全て満席 → 最後の車に強制割り当て
-            if (!$targetCar) {
-                $targetCar  = $lastCar;
+            // 固定済みの人を未割当リストから除外
+            if (!empty($pinnedAssigned)) {
+                $unassigned = array_values(array_filter(
+                    $unassigned,
+                    fn($p) => !in_array((int)$p['member_id'], $pinnedAssigned, true)
+                ));
+            }
+        }
+
+        $lastIdx = count($cars) - 1;
+
+        // 各車が「2人目の運転者」を必要とするか（solo 指定でなく、固定指定でも運転者が未充足）。
+        // booker 自身は1人目のドライバーなので、各車は運転可能者をもう1人必要とする。
+        $needsDriver = [];
+        foreach ($cars as $idx => $car) {
+            $isSolo = in_array($car['booker_id'], $soloBookers);
+            $needsDriver[$idx] = (!$isSolo) && empty($pinnedDriverCars[$idx]);
+        }
+
+        // 残りの乗客を「全員の待ち時間（= 乗る車の出発時限 − 自分の授業終了時限）の合計」が
+        // 最小になるように割り当てる。各車には下限時限（max_class）と残席があり、さらに
+        // 運転者を必要とする車には運転可能者を最低1人置く制約を課す。その下で厳密最小化する。
+        $opt               = self::optimizeOutboundSeating($cars, $carCounts, $unassigned, $driverCapable, $needsDriver);
+        $targetIdxByMember = $opt['assign'];
+        $driverByCar       = $opt['driverByCar']; // carIdx => 運転者役に選ばれた member_id
+
+        // 運転者役に選ばれた member_id の集合
+        $assignedAsDriver = [];
+        foreach ($driverByCar as $mid) $assignedAsDriver[$mid] = true;
+
+        foreach ($unassigned as $participant) {
+            $personClass = (int)($participant['friday_last_class'] ?? 0);
+            $memberId    = (int)$participant['member_id'];
+            $targetIdx   = $targetIdxByMember[$memberId] ?? null;
+
+            // 最適化で割り当て先が無い（全車満席など）→ 最後の車に強制割り当て
+            if ($targetIdx === null) {
+                $targetIdx  = $lastIdx;
                 $classLabel = $personClass === 0 ? '授業なし' : "{$personClass}限終わり";
-                $warnings[] = "【{$participant['name_kanji']}（{$classLabel}）】適切な空席の車が見つからないため「{$targetCar['name']}」に割り当てました";
+                $warnings[] = "【{$participant['name_kanji']}（{$classLabel}）】空席のある車が見つからないため「{$cars[$targetIdx]['name']}」に割り当てました";
             }
 
-            $so = (int)$db->fetch(
-                "SELECT COUNT(*) as cnt FROM expedition_car_members WHERE car_id = ?",
-                [$targetCar['id']]
-            )['cnt'];
+            $targetCar = $cars[$targetIdx];
+            $so        = $carCounts[$targetCar['id']];
 
-            // driver_type に基づいてロールを決定
+            // ロール決定: この車の2人目運転者に選ばれた人は sub_driver。
+            // それ以外は driver_type に従う。
             $role = 'passenger';
             if (($participant['driver_type'] ?? 'none') === 'driver')     $role = 'driver';
             if (($participant['driver_type'] ?? 'none') === 'sub_driver') $role = 'sub_driver';
+            if (!empty($assignedAsDriver[$memberId]) && $role === 'passenger') $role = 'sub_driver';
 
             $db->insert(
                 "INSERT INTO expedition_car_members (car_id, member_id, role, is_excluded, sort_order)
                  VALUES (?, ?, ?, 0, ?)",
                 [$targetCar['id'], $participant['member_id'], $role, $so]
+            );
+            $carCounts[$targetCar['id']]++;
+            $cars[$targetIdx]['max_class'] = max($cars[$targetIdx]['max_class'], $personClass);
+        }
+
+        // 各車の出発時限を「乗車者の friday_last_class の最大値」で確定する。
+        // 早出のドライバーでも遅い人を乗せた車は、その遅い時限で出発する。
+        foreach ($cars as $car) {
+            $db->execute(
+                "UPDATE expedition_cars SET departure_class = ? WHERE id = ?",
+                [(int)$car['max_class'], $car['id']]
             );
         }
 
@@ -361,28 +458,28 @@ class ExpeditionCar
                 "SELECT role FROM expedition_car_members WHERE car_id = ?",
                 [$car['id']]
             );
-            $hasDriver    = false;
-            $hasSubDriver = false;
+            // 運転できる人（driver / sub_driver のいずれか）の人数を数える。
+            // ルール: 各車に運転可能者が2人以上必要（メインドライバー1人＋もう1人。
+            //         2人目はメインドライバーでもサブドライバーでも可）。solo 指定車は1人で可。
+            $driverCount = 0;
             foreach ($members as $m) {
-                if ($m['role'] === 'driver')     $hasDriver    = true;
-                if ($m['role'] === 'sub_driver') $hasSubDriver = true;
+                if ($m['role'] === 'driver' || $m['role'] === 'sub_driver') $driverCount++;
             }
-            $depLabel = $car['departure_class'] !== null
-                ? ($car['departure_class'] === 0 ? '早出' : "{$car['departure_class']}限後出発")
-                : '';
-            $carLabel = $car['name'] . ($depLabel ? "（{$depLabel}）" : '');
+            $depClass = (int)$car['max_class'];
+            $depLabel = $depClass === 0 ? '早出' : "{$depClass}限後出発";
+            $carLabel = $car['name'] . "（{$depLabel}）";
 
-            // booker が solo 指定の場合はサブドライバー不在でも警告しない
+            // booker が solo 指定の場合は運転者1人でも警告しない
             $bookerIdForCar = null;
             foreach ($cars as $c) {
                 if ($c['id'] === $car['id']) { $bookerIdForCar = $c['booker_id'] ?? null; break; }
             }
             $isSolo = $bookerIdForCar !== null && in_array($bookerIdForCar, $soloBookers);
 
-            if (!$hasSubDriver && !$hasDriver) {
+            if ($driverCount === 0) {
                 $warnings[] = "【{$carLabel}】ドライバーがいません";
-            } elseif (!$hasSubDriver && !$isSolo) {
-                $warnings[] = "【{$carLabel}】サブドライバーがいません（ドライバー1人のみ）";
+            } elseif ($driverCount < 2 && !$isSolo) {
+                $warnings[] = "【{$carLabel}】運転できる人が1人しかいません（2人目のドライバーが必要です）";
             }
         }
 
@@ -390,6 +487,368 @@ class ExpeditionCar
             'cars'     => self::findByExpedition($expedition_id),
             'warnings' => $warnings,
         ];
+    }
+
+    /**
+     * 往路の残り乗客を、待ち時間（乗る車の出発時限 − 自分の授業終了時限）の
+     * 「二乗和」が最小になるように各車へ割り当てる。
+     *
+     * 二乗和を使う理由: 単純合計だと「1人が3限待ち(=3)」と「3人が1限待ち(=3)」が同点になるが、
+     * 実運用では後者の方が望ましい（1人に長時間待たせない）。二乗和なら 9 vs 3 で後者を選ぶ。
+     *
+     * 制約:
+     *   - 各車には下限時限 floor（= max_class。ドライバー等の既乗車者の最遅時限）がある。
+     *     その車の出発時限 dep は floor 以上になる。
+     *   - 各車の残席（capacity − 既乗車人数）を超えて乗せられない。
+     *   - 授業なし（class=0）の人は dep<=4 の車のみ可・待ちコスト0（dep>=5 の車には乗せない）。
+     *   - 運転者を必要とする車（needsDriver=true）には運転可能者を最低1人乗せたい
+     *     （満たせない場合は警告に委ね、待ち時間最小を優先する＝ソフト制約）。
+     *
+     * アルゴリズム（DP・厳密最適）:
+     *   授業終了時限 class は 0〜6 の7値しか取らず、各車の出発時限 dep も {floor..6} の
+     *   高々7値に限られる。乗客を class 別（さらに運転可否別）の人数だけで表現し、車を1台ずつ
+     *   「dep を何にし、各 class を何人載せるか」を全列挙する DP で二乗和を最小化する。
+     *   二乗和では「class 降順に1台へ詰める」貪欲が最適でないため、各車で class 別人数を
+     *   全列挙する（class 値が7・車/人数とも数十程度のため実用的に解ける）。
+     *
+     *   運転者要件は2段階で扱う:
+     *     段1) 全 needsDriver 車に運転可能者を1人置くハード制約付きで最小化を試みる。
+     *     段2) 段1が解けない（運転候補・席不足）場合は運転者要件を外して最小化し、
+     *          後段の警告（サブドライバー不在）に委ねる。
+     *   どちらも席が足りないときは null を返し、呼び出し側が最後の車へ強制割当する。
+     *
+     * @return array ['assign' => member_id => 車インデックス, 'driverByCar' => 車インデックス => member_id]
+     */
+    private static function optimizeOutboundSeating(
+        array $cars,
+        array $carCounts,
+        array $unassigned,
+        array $driverCapable = [],
+        array $needsDriver = []
+    ): array {
+        $m = count($cars);
+        if ($m === 0 || empty($unassigned)) {
+            return ['assign' => [], 'driverByCar' => []];
+        }
+
+        $maxClass = 6; // 授業終了時限の最大（0=早出 〜 6限）
+
+        // 各車の下限時限 floor と残席 rem
+        $floors = [];
+        $rem    = [];
+        foreach ($cars as $idx => $car) {
+            $floors[$idx] = (int)$car['max_class'];
+            $rem[$idx]    = max(0, (int)$car['capacity'] - (int)$carCounts[$car['id']]);
+        }
+
+        // 自由乗客を「運転可否 × class」のバケットに振り分ける。
+        // bucketD = 運転可能者, bucketN = 運転不可者。各 class ごとに member_id を保持。
+        $bucketD = array_fill(0, $maxClass + 1, []);
+        $bucketN = array_fill(0, $maxClass + 1, []);
+        foreach ($unassigned as $p) {
+            $mid = (int)$p['member_id'];
+            $cl  = max(0, min($maxClass, (int)($p['friday_last_class'] ?? 0)));
+            if (!empty($driverCapable[$mid])) {
+                $bucketD[$cl][] = $mid;
+            } else {
+                $bucketN[$cl][] = $mid;
+            }
+        }
+        $cntD = array_map('count', $bucketD); // class => 運転可能者数
+        $cntN = array_map('count', $bucketN); // class => 運転不可者数
+
+        $needs = [];
+        for ($j = 0; $j < $m; $j++) {
+            $needs[$j] = !empty($needsDriver[$j]);
+        }
+
+        // 出発時限 dep ベクトルを枝刈り列挙し、各構成を最小費用流で解いて二乗和最小を求める。
+        $res = self::solveOutboundMCMF($floors, $rem, $cntD, $cntN, $maxClass);
+        if ($res === null) {
+            // 席が足りず全員を割り当て切れない → 呼び出し側の強制割当に委ねる
+            return ['assign' => [], 'driverByCar' => []];
+        }
+
+        // 運転者要件（needs 車に運転可能者1人）を、待ち時間を変えない範囲で後処理で満たす。
+        $res = self::fixOutboundDrivers($res, $needs);
+
+        // 車ごと・class 別の人数（aD/aN）から実際の member_id を割り当てる。
+        return self::reconstructOutboundMCMF($res, $needs, $bucketD, $bucketN);
+    }
+
+    /**
+     * 出発時限 dep ベクトルを枝刈り列挙し、各構成を最小費用流で解いて
+     * 「待ち時間の二乗和」が最小になる配置を求める。
+     *
+     * 目的関数に二乗和を使う理由: 単純合計だと「1人が3限待ち(=3)」と「3人が1限待ち(=3)」が
+     * 同点になるが、実運用では後者が望ましい（1人に長時間待たせない）。二乗和なら 9 vs 3 で後者を選ぶ。
+     *
+     * 授業なし（class=0）の特例: dep<=4 の車のみ可・待ちコスト0（dep>=5 の車には乗せない）。
+     *
+     * アルゴリズム:
+     *   - dep[j] を固定すると各車のコストが class ごとに定数 (dep-class)^2 になり、
+     *     乗客割当は最小費用流（輸送問題）で厳密に解ける（総ユニモジュラ→整数最適）。
+     *   - dep の候補は「floor[j] または乗客に出現する class（>=floor[j]）」のみで最適を取り逃さない
+     *     （実際に乗る最大 class を上回る dep は損なので最適解では選ばれない）。
+     *   - 全 dep ベクトルを列挙し、各構成の最小費用流コストの最小を採る。
+     *
+     * 運転者要件はここでは扱わず、呼び出し側が fixOutboundDrivers で後処理する。
+     *
+     * @return array|null ['cost'=>二乗和, 'D'=>各車dep, 'aD'=>[j][v]=運転可能者人数, 'aN'=>[j][v]=運転不可者人数] または席不足で null
+     */
+    private static function solveOutboundMCMF(
+        array $floors,
+        array $rem,
+        array $cntD,
+        array $cntN,
+        int $maxClass
+    ): ?array {
+        $m = count($floors);
+
+        // 乗客に出現する class（運転可否合算）
+        $present = [];
+        for ($v = 0; $v <= $maxClass; $v++) {
+            if (($cntD[$v] + $cntN[$v]) > 0) $present[$v] = true;
+        }
+
+        // 各車の dep 候補: floor[j] と、出現 class のうち floor[j] 以上
+        $cand = [];
+        for ($j = 0; $j < $m; $j++) {
+            $set = [$floors[$j] => true];
+            foreach ($present as $v => $_) {
+                if ($v >= $floors[$j]) $set[$v] = true;
+            }
+            $cand[$j] = array_keys($set);
+            sort($cand[$j]);
+        }
+
+        $best    = null;
+        $bestRes = null;
+        $D       = array_fill(0, $m, 0);
+
+        $rec = function ($j) use (&$rec, &$best, &$bestRes, &$D, $cand, $m, $floors, $rem, $cntD, $cntN, $maxClass) {
+            if ($j === $m) {
+                $r = self::transportOutbound($floors, $rem, $D, $cntD, $cntN, $maxClass);
+                if ($r !== null && ($best === null || $r['cost'] < $best)) {
+                    $best    = $r['cost'];
+                    $bestRes = ['cost' => $r['cost'], 'aD' => $r['aD'], 'aN' => $r['aN'], 'D' => $D];
+                }
+                return;
+            }
+            foreach ($cand[$j] as $d) {
+                $D[$j] = $d;
+                $rec($j + 1);
+            }
+        };
+        $rec(0);
+
+        return $bestRes;
+    }
+
+    /**
+     * dep ベクトルを固定したときの輸送問題（最小費用流）を解く。
+     * 全乗客を席に収められなければ null。
+     *
+     * @return array|null ['cost'=>二乗和, 'aD'=>[j][v]=運転可能者人数, 'aN'=>[j][v]=運転不可者人数]
+     */
+    private static function transportOutbound(
+        array $floors,
+        array $rem,
+        array $D,
+        array $cntD,
+        array $cntN,
+        int $maxClass
+    ): ?array {
+        $m = count($floors);
+        $n = array_sum($cntD) + array_sum($cntN);
+        if ($n === 0) {
+            return ['cost' => 0, 'aD' => array_fill(0, $m, array_fill(0, $maxClass + 1, 0)), 'aN' => array_fill(0, $m, array_fill(0, $maxClass + 1, 0))];
+        }
+
+        // ノード番号: S=0, 運転可能class v -> 1+v, 運転不可class v -> (maxClass+2)+v, 車 j -> base+j, T
+        $S    = 0;
+        $offD = 1;
+        $offN = $offD + ($maxClass + 1);
+        $offC = $offN + ($maxClass + 1);
+        $T    = $offC + $m;
+        $mc   = new self();
+        $g    = $mc->newFlow($T + 1);
+
+        $edgeId = []; // "D{j}-{v}" / "N{j}-{v}" => 正辺ID
+
+        for ($v = 0; $v <= $maxClass; $v++) {
+            if ($cntD[$v] > 0) $mc->flowAddEdge($g, $S, $offD + $v, $cntD[$v], 0);
+            if ($cntN[$v] > 0) $mc->flowAddEdge($g, $S, $offN + $v, $cntN[$v], 0);
+        }
+        for ($j = 0; $j < $m; $j++) {
+            $d = $D[$j];
+            for ($v = 0; $v <= $d; $v++) {
+                if ($v === 0 && $d > 4) continue; // 授業なしは dep<=4 のみ
+                $w = ($v === 0) ? 0 : ($d - $v) * ($d - $v);
+                if ($cntD[$v] > 0) $edgeId["D{$j}-{$v}"] = $mc->flowAddEdge($g, $offD + $v, $offC + $j, $rem[$j], $w);
+                if ($cntN[$v] > 0) $edgeId["N{$j}-{$v}"] = $mc->flowAddEdge($g, $offN + $v, $offC + $j, $rem[$j], $w);
+            }
+            $mc->flowAddEdge($g, $offC + $j, $T, $rem[$j], 0);
+        }
+
+        [$flow, $cost] = $mc->flowRun($g, $S, $T);
+        if ($flow !== $n) return null; // 全員乗せられない
+
+        $aD = array_fill(0, $m, array_fill(0, $maxClass + 1, 0));
+        $aN = array_fill(0, $m, array_fill(0, $maxClass + 1, 0));
+        foreach ($edgeId as $key => $id) {
+            $used = $mc->flowUsed($g, $id);
+            if ($used <= 0) continue;
+            $type = $key[0];
+            [$jj, $vv] = explode('-', substr($key, 1));
+            if ($type === 'D') $aD[(int)$jj][(int)$vv] = $used;
+            else               $aN[(int)$jj][(int)$vv] = $used;
+        }
+        return ['cost' => $cost, 'aD' => $aD, 'aN' => $aN];
+    }
+
+    /**
+     * 運転者要件（needs 車に運転可能者を1人以上）を、待ち時間を変えない範囲で後処理で満たす。
+     * 運転者のいない needs 車について、同じ class（=同じ待ち時間）の運転可能者を他車から融通する。
+     * 融通できない車は driverWarnings に車インデックスを記録する（後段の警告に委ねる）。
+     */
+    private static function fixOutboundDrivers(array $res, array $needs): array
+    {
+        $m  = count($res['D']);
+        $aD = $res['aD'];
+        $aN = $res['aN'];
+        $warnings = [];
+
+        for ($j = 0; $j < $m; $j++) {
+            if (empty($needs[$j])) continue;
+            $hasDriver = array_sum($aD[$j]) > 0;
+            $hasAny    = (array_sum($aD[$j]) + array_sum($aN[$j])) > 0;
+            if ($hasDriver || !$hasAny) continue; // 既に運転者あり、または乗客0（booker のみ）
+
+            // 車 j の運転不可者（class v）を、他車 k の同 class 運転可能者と交換（dep 不変＝待ち不変）
+            $swapped = false;
+            for ($v = 0; $v <= 6 && !$swapped; $v++) {
+                if ($aN[$j][$v] === 0) continue;
+                for ($k = 0; $k < $m; $k++) {
+                    if ($k === $j || $aD[$k][$v] === 0) continue;
+                    $kDrivers = array_sum($aD[$k]);
+                    $kNeeds   = !empty($needs[$k]);
+                    // k から運転者を1人抜いても k の要件を壊さない
+                    if (($kNeeds && $kDrivers >= 2) || (!$kNeeds && $kDrivers >= 1)) {
+                        $aN[$j][$v]--; $aD[$j][$v]++;
+                        $aD[$k][$v]--; $aN[$k][$v]++;
+                        $swapped = true;
+                        break;
+                    }
+                }
+            }
+            if (!$swapped) $warnings[] = $j;
+        }
+
+        $res['aD'] = $aD;
+        $res['aN'] = $aN;
+        $res['driverWarnings'] = $warnings;
+        return $res;
+    }
+
+    /**
+     * solveOutboundMCMF / fixOutboundDrivers の結果（車ごと・class 別の人数）から、
+     * class 別バケットの member_id を各車へ割り当てる。
+     *
+     * @return array ['assign' => member_id => 車インデックス, 'driverByCar' => 車インデックス => member_id]
+     */
+    private static function reconstructOutboundMCMF(array $res, array $needs, array $bucketD, array $bucketN): array
+    {
+        $m  = count($res['D']);
+        $aD = $res['aD'];
+        $aN = $res['aN'];
+        $bD = $bucketD;
+        $bN = $bucketN;
+
+        $assign      = [];
+        $driverByCar = [];
+
+        for ($j = 0; $j < $m; $j++) {
+            // 運転可能者を取り出す（needs 車なら最初の1人を運転者役に）
+            foreach ($aD[$j] as $v => $cnt) {
+                for ($t = 0; $t < $cnt; $t++) {
+                    $mid = array_pop($bD[$v]);
+                    if ($mid === null) continue;
+                    $assign[$mid] = $j;
+                    if ($needs[$j] && empty($driverByCar[$j])) {
+                        $driverByCar[$j] = $mid;
+                    }
+                }
+            }
+            // 運転不可者を取り出す
+            foreach ($aN[$j] as $v => $cnt) {
+                for ($t = 0; $t < $cnt; $t++) {
+                    $mid = array_pop($bN[$v]);
+                    if ($mid === null) continue;
+                    $assign[$mid] = $j;
+                }
+            }
+        }
+
+        return ['assign' => $assign, 'driverByCar' => $driverByCar];
+    }
+
+    // ===== 最小費用流（SSP / SPFA ベース、整数容量）=====
+    // 軽量な内部ヘルパ。flow 構造体は連想配列で持ち回る。
+
+    /** 新しいフロー構造体を生成 */
+    private function newFlow(int $n): array
+    {
+        return ['n' => $n, 'to' => [], 'cap' => [], 'cost' => [], 'head' => array_fill(0, $n, -1), 'next' => []];
+    }
+
+    /** 有向辺 u->v（容量 cap・コスト cost）と逆辺を追加し、正辺の ID を返す */
+    private function flowAddEdge(array &$g, int $u, int $v, int $cap, int $cost): int
+    {
+        $id = count($g['to']);
+        $g['to'][]   = $v; $g['cap'][]  = $cap; $g['cost'][] = $cost; $g['next'][] = $g['head'][$u]; $g['head'][$u] = $id;
+        $g['to'][]   = $u; $g['cap'][]  = 0;    $g['cost'][] = -$cost; $g['next'][] = $g['head'][$v]; $g['head'][$v] = $id + 1;
+        return $id;
+    }
+
+    /** 正辺 id に流れた量（= 逆辺の残容量） */
+    private function flowUsed(array $g, int $id): int
+    {
+        return $g['cap'][$id ^ 1];
+    }
+
+    /** s->t の最小費用最大流を求め [flow, cost] を返す（SPFA で最短コスト路を繰り返す） */
+    private function flowRun(array &$g, int $s, int $t): array
+    {
+        $N = $g['n'];
+        $flow = 0; $cost = 0;
+        while (true) {
+            $dist = array_fill(0, $N, PHP_INT_MAX);
+            $inq  = array_fill(0, $N, false);
+            $pe   = array_fill(0, $N, -1);
+            $dist[$s] = 0;
+            $queue = [$s]; $inq[$s] = true;
+            while ($queue) {
+                $u = array_shift($queue); $inq[$u] = false;
+                for ($e = $g['head'][$u]; $e !== -1; $e = $g['next'][$e]) {
+                    if ($g['cap'][$e] <= 0) continue;
+                    $v = $g['to'][$e];
+                    if ($dist[$u] !== PHP_INT_MAX && $dist[$u] + $g['cost'][$e] < $dist[$v]) {
+                        $dist[$v] = $dist[$u] + $g['cost'][$e];
+                        $pe[$v]   = $e;
+                        if (!$inq[$v]) { $inq[$v] = true; $queue[] = $v; }
+                    }
+                }
+            }
+            if ($dist[$t] === PHP_INT_MAX) break;
+            // 経路上の最小残容量
+            $f = PHP_INT_MAX;
+            for ($v = $t; $v !== $s; ) { $e = $pe[$v]; $f = min($f, $g['cap'][$e]); $v = $g['to'][$e ^ 1]; }
+            for ($v = $t; $v !== $s; ) { $e = $pe[$v]; $g['cap'][$e] -= $f; $g['cap'][$e ^ 1] += $f; $v = $g['to'][$e ^ 1]; }
+            $flow += $f;
+            $cost += $f * $dist[$t];
+        }
+        return [$flow, $cost];
     }
 
     /**
@@ -423,12 +882,13 @@ class ExpeditionCar
             $db->execute("DELETE FROM expedition_cars        WHERE id = ?",     [$ec['id']]);
         }
 
-        // 車に乗る参加者を全員取得（住所付き）
+        // 車に乗る参加者を全員取得（住所付き）。
+        // 車を予約する人（can_book_car=1）は乗車扱いが漏れていても必ず含める。
         $participants = $db->fetchAll(
             "SELECT ep.*, m.name_kanji, m.name_kana, m.address
              FROM expedition_participants ep
              JOIN members m ON m.id = ep.member_id
-             WHERE ep.expedition_id = ? AND ep.is_joining_car = 1
+             WHERE ep.expedition_id = ? AND (ep.is_joining_car = 1 OR ep.can_book_car = 1)
              ORDER BY m.name_kana ASC",
             [$expedition_id]
         );
@@ -471,7 +931,7 @@ class ExpeditionCar
             // 車名: "ドライバー名車（下車駅方面）"
             $carName = $driver['name_kanji'] . '車（' . $dropStation . '方面）';
 
-            $capacity = isset($capacities[$driver['member_id']]) ? (int)$capacities[$driver['member_id']] : 5;
+            $capacity = isset($capacities[$driver['member_id']]) ? (int)$capacities[$driver['member_id']] : 6;
             $capacity = max(1, $capacity);
 
             $carId = $db->insert(
@@ -624,16 +1084,16 @@ class ExpeditionCar
                 "SELECT role FROM expedition_car_members WHERE car_id = ?",
                 [$car['car_id']]
             );
-            $hasDriver    = false;
-            $hasSubDriver = false;
+            // 運転できる人（driver / sub_driver のいずれか）の人数で判定する。
+            // 2人目はメインドライバーでもサブドライバーでも可。
+            $driverCount = 0;
             foreach ($members as $m) {
-                if ($m['role'] === 'driver')     $hasDriver    = true;
-                if ($m['role'] === 'sub_driver') $hasSubDriver = true;
+                if ($m['role'] === 'driver' || $m['role'] === 'sub_driver') $driverCount++;
             }
-            if (!$hasDriver) {
+            if ($driverCount === 0) {
                 $warnings[] = "【{$car['car_name']}】ドライバーがいません";
-            } elseif (!$hasSubDriver) {
-                $warnings[] = "【{$car['car_name']}】サブドライバーがいません（ドライバー1人のみ）";
+            } elseif ($driverCount < 2) {
+                $warnings[] = "【{$car['car_name']}】運転できる人が1人しかいません（2人目のドライバーが必要です）";
             }
         }
 

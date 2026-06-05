@@ -29,7 +29,16 @@ function openNewsModal(date, title, desc, imgSrc) {
     document.getElementById('modalDate').innerText = date;
     document.getElementById('modalTitle').innerText = title;
     document.getElementById('modalDesc').innerText = desc;
-    document.getElementById('modalImg').src = imgSrc;
+
+    // 画像がない場合は非表示にする（空srcによる余分なリクエストを防ぐ）
+    const img = document.getElementById('modalImg');
+    if (imgSrc) {
+        img.src = imgSrc;
+        img.style.display = '';
+    } else {
+        img.src = '';
+        img.style.display = 'none';
+    }
 
     const modal = document.getElementById('newsModal');
     modal.style.display = 'block';
@@ -134,9 +143,10 @@ function renderNewsCards(newsItems) {
     const grid = document.querySelector('.news-grid');
     if (!grid) return;
 
+    // data属性にIDを持たせてonclick属性でのHTMLエンティティ二重デコード問題を回避
     grid.innerHTML = newsItems.map(item => `
         <div id="${escHtml(item.anchor_id || 'news-' + item.id)}" class="news-card"
-             onclick="openNewsModal('${escHtml(item.news_date)}', '${escHtml(item.title)}', '${escHtml(item.description || '')}', '${escHtml(item.image_path || '')}')">
+             data-news-id="${escHtml(String(item.id))}">
             <div class="card-image">
                 ${item.image_path ? `<img src="${escHtml(item.image_path)}" alt="${escHtml(item.title)}">` : ''}
             </div>
@@ -146,6 +156,20 @@ function renderNewsCards(newsItems) {
                 <p class="tap-hint">(タップで詳細表示)</p>
             </div>
         </div>`).join('');
+
+    // ニュースデータをマップに保持しイベントリスナーで渡す（文字列をエンコードせず安全に渡せる）
+    const newsMap = {};
+    newsItems.forEach(item => { newsMap[String(item.id)] = item; });
+
+    grid.querySelectorAll('.news-card[data-news-id]').forEach(card => {
+        card.addEventListener('click', () => {
+            const id = card.getAttribute('data-news-id');
+            const item = newsMap[id];
+            if (item) {
+                openNewsModal(item.news_date || '', item.title || '', item.description || '', item.image_path || '');
+            }
+        });
+    });
 }
 
 document.addEventListener('DOMContentLoaded', loadHpContent);

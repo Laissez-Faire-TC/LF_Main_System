@@ -30,6 +30,14 @@ class MerchandiseShopController
         foreach ($myOrders as &$o) {
             $o['items'] = MerchandiseOrder::getItems((int)$o['id']);
         }
+        // 現在販売中の商品に関連する注文のみ表示
+        $availableIds = array_map('intval', array_column($items, 'id'));
+        $myOrders = array_values(array_filter($myOrders, function ($o) use ($availableIds) {
+            foreach ($o['items'] as $it) {
+                if (in_array((int)$it['merchandise_id'], $availableIds)) return true;
+            }
+            return false;
+        }));
 
         $this->render('shop/member', [
             'memberName' => $_SESSION['member_name'] ?? '',
@@ -142,7 +150,13 @@ class MerchandiseShopController
             return;
         }
 
-        $items    = Merchandise::findAvailable();
+        // トークンに紐付いた商品のみ表示（merchandise_idが設定されている場合）
+        $allItems = Merchandise::findAvailable();
+        if (!empty($token['merchandise_id'])) {
+            $items = array_values(array_filter($allItems, fn($it) => (int)$it['id'] === (int)$token['merchandise_id']));
+        } else {
+            $items = $allItems;
+        }
         $memberId = (int)($_SESSION['member_id'] ?? 0);
         $myOrders = Database::getInstance()->fetchAll(
             "SELECT * FROM merchandise_orders
@@ -154,6 +168,14 @@ class MerchandiseShopController
         foreach ($myOrders as &$o) {
             $o['items'] = MerchandiseOrder::getItems((int)$o['id']);
         }
+        // 現在販売中の商品に関連する注文のみ表示
+        $availableIds = array_map('intval', array_column($items, 'id'));
+        $myOrders = array_values(array_filter($myOrders, function ($o) use ($availableIds) {
+            foreach ($o['items'] as $it) {
+                if (in_array((int)$it['merchandise_id'], $availableIds)) return true;
+            }
+            return false;
+        }));
 
         $this->render('shop/public', [
             'memberName' => $_SESSION['member_name'] ?? '',
@@ -227,6 +249,16 @@ class MerchandiseShopController
 
         $body = Request::json();
         $cart = is_array($body['cart'] ?? null) ? $body['cart'] : [];
+
+        // トークンに紐付いた商品以外の注文を拒否
+        if (!empty($token['merchandise_id'])) {
+            foreach ($cart as $line) {
+                if ((int)($line['merchandise_id'] ?? 0) !== (int)$token['merchandise_id']) {
+                    Response::error('このURLで購入できない商品が含まれています', 400, 'INVALID_MERCHANDISE');
+                    return;
+                }
+            }
+        }
         if (empty($cart)) {
             Response::error('カートが空です', 400, 'EMPTY_CART');
             return;

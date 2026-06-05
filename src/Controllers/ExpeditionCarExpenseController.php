@@ -25,7 +25,7 @@ class ExpeditionCarExpenseController
      */
     public function index(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('expeditions');
         $expenses = ExpeditionCarExpense::findByExpedition((int)$params['id']);
         Response::success($expenses);
     }
@@ -36,7 +36,7 @@ class ExpeditionCarExpenseController
      */
     public function destroy(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('expeditions');
         ExpeditionCarExpense::delete((int)$params['eid']);
         Response::success(['message' => '削除しました']);
     }
@@ -47,7 +47,7 @@ class ExpeditionCarExpenseController
      */
     public function settlement(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('expeditions');
         $data = $this->calcSettlement((int)$params['id']);
         Response::success($data);
     }
@@ -58,7 +58,7 @@ class ExpeditionCarExpenseController
      */
     public function exportXlsx(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('expeditions');
         $expeditionId = (int)$params['id'];
         $expedition   = Expedition::findById($expeditionId);
         if (!$expedition) Response::error('遠征が見つかりません', 404);
@@ -96,7 +96,7 @@ class ExpeditionCarExpenseController
      */
     public function exportPdf(array $params): void
     {
-        Auth::requireAuth();
+        Auth::requirePermission('expeditions');
         $expeditionId = (int)$params['id'];
         $expedition   = Expedition::findById($expeditionId);
         if (!$expedition) Response::error('遠征が見つかりません', 404);
