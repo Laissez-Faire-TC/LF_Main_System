@@ -123,6 +123,25 @@ class EventApplication
     }
 
     /**
+     * ID指定で1件取得
+     */
+    public function findById(int $id): ?array
+    {
+        return $this->db->fetch("SELECT * FROM event_applications WHERE id = ?", [$id]);
+    }
+
+    /**
+     * 備考を更新（管理者用）
+     */
+    public function updateNote(int $id, ?string $note): bool
+    {
+        return $this->db->execute(
+            "UPDATE event_applications SET note = ?, updated_at = NOW() WHERE id = ?",
+            [$note, $id]
+        ) >= 0;
+    }
+
+    /**
      * 管理者によるキャンセル（ID指定）
      * 戻り値: キャンセル前のstatus
      */
@@ -148,14 +167,30 @@ class EventApplication
      */
     public function saveTeamAssignments(int $eventId, array $assignments): void
     {
-        foreach ($assignments as $appId => $teamNo) {
-            $team = ($teamNo === null || $teamNo === '') ? null : (int)$teamNo;
-            $this->db->execute(
-                "UPDATE event_applications SET team_no = ?, updated_at = NOW()
-                 WHERE id = ? AND event_id = ? AND status = 'submitted'",
-                [$team, (int)$appId, $eventId]
-            );
+        // 班割りの一括保存。多数のUPDATEを「班割りを更新」の1行にまとめる。
+        $run = function () use ($eventId, $assignments) {
+            foreach ($assignments as $appId => $teamNo) {
+                $team = ($teamNo === null || $teamNo === '') ? null : (int)$teamNo;
+                $this->db->execute(
+                    "UPDATE event_applications SET team_no = ?, updated_at = NOW()
+                     WHERE id = ? AND event_id = ? AND status = 'submitted'",
+                    [$team, (int)$appId, $eventId]
+                );
+            }
+        };
+
+        if (class_exists('AuditLogger')) {
+            AuditLogger::group([
+                'feature'      => 'events',
+                'method'       => 'PUT',
+                'target_table' => 'events',
+                'target_id'    => $eventId,
+                'action_label' => '班割りを更新',
+                'changes'      => ['対象人数' => count($assignments) . '名'],
+            ], $run);
+            return;
         }
+        $run();
     }
 
     /**

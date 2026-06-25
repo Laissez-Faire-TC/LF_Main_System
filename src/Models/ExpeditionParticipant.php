@@ -9,7 +9,7 @@ class ExpeditionParticipant
      */
     public static function findByExpedition(int $expedition_id): array
     {
-        return Database::getInstance()->fetchAll(
+        $rows = Database::getInstance()->fetchAll(
             "SELECT ep.*, m.name_kanji, m.name_kana, m.gender, m.grade, m.allergy, m.address,
                     ep.timescar_number
              FROM expedition_participants ep
@@ -18,6 +18,10 @@ class ExpeditionParticipant
              ORDER BY m.name_kana",
             [$expedition_id]
         );
+
+        // 権限のない幹部からは members 由来の個人情報（address/allergy 等）を除去する。
+        // 会員ポータル・公開しおりから呼ばれた場合は maskMemberData が何もしないため安全。
+        return Auth::maskMemberData($rows);
     }
 
     /**

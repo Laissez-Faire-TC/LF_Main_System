@@ -65,9 +65,17 @@ class Database
      */
     public function execute(string $sql, array $params = []): int
     {
+        // 監査ログ用: UPDATE/DELETE は実行前に対象行（before）を取得
+        $beforeRows = AuditLogger::fetchBefore($this->pdo, $sql, $params);
+
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
-        return $stmt->rowCount();
+        $rowCount = $stmt->rowCount();
+
+        // 監査ログ記録（幹部セッション中の書き込みのみ・失敗は無視）
+        AuditLogger::record($this->pdo, $sql, $params, $beforeRows, null);
+
+        return $rowCount;
     }
 
     /**
@@ -77,7 +85,12 @@ class Database
     {
         $stmt = $this->pdo->prepare($sql);
         $stmt->execute($params);
-        return (int)$this->pdo->lastInsertId();
+        $insertId = (int)$this->pdo->lastInsertId();
+
+        // 監査ログ記録（INSERT）
+        AuditLogger::record($this->pdo, $sql, $params, [], $insertId);
+
+        return $insertId;
     }
 
     /**

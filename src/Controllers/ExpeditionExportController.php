@@ -172,12 +172,15 @@ class ExpeditionExportController
             $sheet->setCellValue('F' . $row, $p['lunch']     ? '○' : '');
             $sheet->setCellValue('G' . $row, $this->fridayClassLabel($p['friday_last_class'] ?? null));
             $sheet->setCellValue('H' . $row, $this->driverLabel($p['driver_type'] ?? null, (int)($p['can_book_car'] ?? 0) === 1));
-            $sheet->setCellValue('I' . $row, $p['allergy']   ?? '');
-            if (!empty($p['allergy'])) {
+            // 閲覧権限のない幹部にはアレルギー・住所を出力しない
+            $allergy = Auth::canViewMemberField('allergy') ? ($p['allergy'] ?? '') : '';
+            $address = Auth::canViewMemberField('address') ? ($p['address'] ?? '') : '';
+            $sheet->setCellValue('I' . $row, $allergy);
+            if (!empty($allergy)) {
                 $sheet->getStyle('I' . $row)->getFont()->setColor(new Color('FFCC0000'));
             }
             $sheet->getStyle('I' . $row)->getAlignment()->setWrapText(true);
-            $sheet->setCellValue('J' . $row, $p['address'] ?? '');
+            $sheet->setCellValue('J' . $row, $address);
             $sheet->getStyle('J' . $row)->getAlignment()->setWrapText(true);
             $row++;
         }
@@ -403,8 +406,11 @@ class ExpeditionExportController
         $preCount   = count(array_filter($participants, fn($p) => $p['pre_night']));
         $lunchCount = count(array_filter($participants, fn($p) => $p['lunch']));
         $pRows = '';
+        $canAllergy = Auth::canViewMemberField('allergy');
+        $canAddress = Auth::canViewMemberField('address');
         foreach ($participants as $i => $p) {
-            $allergy = $p['allergy'] ? '<span class="allergy">' . $h($p['allergy']) . '</span>' : '';
+            $allergyVal = $canAllergy ? ($p['allergy'] ?? '') : '';
+            $allergy = $allergyVal ? '<span class="allergy">' . $h($allergyVal) . '</span>' : '';
             $pRows .= '<tr>'
                 . '<td class="center">' . ($i + 1) . '</td>'
                 . '<td>' . $h($p['name_kanji']) . '</td>'
@@ -413,7 +419,7 @@ class ExpeditionExportController
                 . '<td class="center">' . ($p['pre_night'] ? '○' : '') . '</td>'
                 . '<td class="center">' . ($p['lunch']     ? '○' : '') . '</td>'
                 . '<td>' . $allergy . '</td>'
-                . '<td>' . $h($p['address'] ?? '') . '</td>'
+                . '<td>' . ($canAddress ? $h($p['address'] ?? '') : '') . '</td>'
                 . '</tr>';
         }
         $pRows .= '<tr class="total-row">'
@@ -914,15 +920,17 @@ class ExpeditionExportController
                 // 性別
                 $genderLabel = ($p['gender'] ?? '') === 'male' ? '男' : (($p['gender'] ?? '') === 'female' ? '女' : '');
 
+                // 閲覧権限のない幹部には個人情報項目を出力しない
+                $canBirth = Auth::canViewMemberField('birthdate');
                 $sheet->setCellValue('A' . $row, $roleLabel);
                 $sheet->setCellValue('B' . $row, $p['name_kanji'] ?? '');
                 $sheet->setCellValue('C' . $row, $p['name_kana']  ?? '');
                 $sheet->setCellValue('D' . $row, $genderLabel);
-                $sheet->setCellValue('E' . $row, $age);
-                $sheet->setCellValue('F' . $row, $birthStr);
-                $sheet->setCellValue('G' . $row, $p['address'] ?? '');
-                $sheet->setCellValue('H' . $row, $p['phone'] ?? '');
-                $sheet->setCellValue('I' . $row, $p['emergency_contact'] ?? '');
+                $sheet->setCellValue('E' . $row, $canBirth ? $age : '');
+                $sheet->setCellValue('F' . $row, $canBirth ? $birthStr : '');
+                $sheet->setCellValue('G' . $row, Auth::canViewMemberField('address') ? ($p['address'] ?? '') : '');
+                $sheet->setCellValue('H' . $row, Auth::canViewMemberField('phone') ? ($p['phone'] ?? '') : '');
+                $sheet->setCellValue('I' . $row, Auth::canViewMemberField('emergency_contact') ? ($p['emergency_contact'] ?? '') : '');
 
                 // 中央揃え列
                 foreach (['A','D','E','F'] as $c) {

@@ -12,6 +12,36 @@ class Event
     }
 
     /**
+     * 新歓フォームの「学科」選択肢（指定の固定順）
+     */
+    public static function shinkanDepartments(): array
+    {
+        return [
+            '表現工学科', '情報理工学科', '情報通信学科', '機械科学・航空宇宙学科',
+            '電子物理システム学科', '応用数理学科', '数学科',
+            'Major in Mathematical Sciences', 'Mathematical Sciences',
+            '社会環境工学科', '環境資源工学科', '経営システム工学科', '総合機械工学科',
+            '建築学科', '化学・生命化学科', '応用化学科', '物理学科', '応用物理学科',
+            '生命医科学科', '電気・情報生命学科',
+        ];
+    }
+
+    /**
+     * OBOGフォームの「代」選択肢（1〜上限）。
+     * 上限は 2026-09-30 まで 11、以降は毎年 10/1 を境に +1。
+     */
+    public static function obogGenerations(): array
+    {
+        $base     = 11;
+        $baseYear = 2025;   // 2026/10/1（effectiveYear=2026）で初めて +1
+        $year  = (int)date('Y');
+        $month = (int)date('n');
+        $effectiveYear = ($month >= 10) ? $year : $year - 1;
+        $max = $base + max(0, $effectiveYear - $baseYear);
+        return array_map('strval', range(1, $max));
+    }
+
+    /**
      * 全件取得（申込数・キャンセル待ち数付き）
      */
     public function all(): array
@@ -78,8 +108,8 @@ class Event
     public function create(array $data): int
     {
         $sql = "INSERT INTO events
-                    (title, event_date, event_time, description, location, participation_fee, capacity, deadline, allow_waitlist, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    (title, event_date, event_time, description, location, participation_fee, capacity, deadline, allow_waitlist, allow_guest, guest_type, include_guests_in_calc, is_active)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
         return $this->db->insert($sql, [
             $data['title'],
@@ -91,6 +121,9 @@ class Event
             isset($data['capacity']) && $data['capacity'] !== '' ? (int)$data['capacity'] : null,
             isset($data['deadline']) && $data['deadline'] !== '' ? $data['deadline'] : null,
             $data['allow_waitlist'] ?? 0,
+            $data['allow_guest'] ?? 0,
+            !empty($data['guest_type']) && in_array($data['guest_type'], ['shinkan', 'obog'], true) ? $data['guest_type'] : null,
+            $data['include_guests_in_calc'] ?? 1,
             $data['is_active'] ?? 0,
         ]);
     }
@@ -101,7 +134,8 @@ class Event
     public function update(int $id, array $data): bool
     {
         $allowed = ['title', 'event_date', 'event_time', 'description', 'location',
-                    'participation_fee', 'capacity', 'deadline', 'allow_waitlist', 'is_active'];
+                    'participation_fee', 'capacity', 'deadline', 'allow_waitlist',
+                    'allow_guest', 'guest_type', 'include_guests_in_calc', 'is_active'];
         $fields = [];
         $values = [];
 
@@ -113,6 +147,8 @@ class Event
                     if ($field === 'capacity' && $values[count($values)-1] !== null) {
                         $values[count($values)-1] = (int)$values[count($values)-1];
                     }
+                } elseif ($field === 'guest_type') {
+                    $values[] = in_array($data[$field], ['shinkan', 'obog'], true) ? $data[$field] : null;
                 } else {
                     $values[] = $data[$field];
                 }

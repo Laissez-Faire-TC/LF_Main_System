@@ -30,9 +30,15 @@ class MerchandiseShopController
         foreach ($myOrders as &$o) {
             $o['items'] = MerchandiseOrder::getItems((int)$o['id']);
         }
-        // 現在販売中の商品に関連する注文のみ表示
+        unset($o);
+        // 販売中商品に関連する注文、または支払い未完了（未入金・未報告）の注文を表示
+        // ＝販売期間が過ぎても、まだ支払い報告していない注文は履歴に残す。
+        // ただし、商品が物販管理から削除された注文は表示しない。
         $availableIds = array_map('intval', array_column($items, 'id'));
         $myOrders = array_values(array_filter($myOrders, function ($o) use ($availableIds) {
+            if (!MerchandiseOrder::hasExistingMerchandise($o)) return false;
+            $isUnsettled = ($o['payment_status'] === 'unpaid' && empty($o['payment_submitted']));
+            if ($isUnsettled) return true;
             foreach ($o['items'] as $it) {
                 if (in_array((int)$it['merchandise_id'], $availableIds)) return true;
             }
@@ -291,8 +297,39 @@ class MerchandiseShopController
     }
 
     /**
+     * 支払いフォームページ（会員ログイン必須）
+     * GET /member/store/orders/{id}/payment
+     * 購入者本人のみアクセス可。販売期間が過ぎても、支払い報告は受け付ける。
+     */
+    public function paymentForm(array $params): void
+    {
+        if (!$this->checkMemberAuth()) {
+            $returnTo = '/member/store/orders/' . (int)($params['id'] ?? 0) . '/payment';
+            Response::redirect('/member/login?return=' . urlencode($returnTo));
+            return;
+        }
+
+        $memberId = (int)($_SESSION['member_id'] ?? 0);
+        $orderId  = (int)($params['id'] ?? 0);
+
+        $order = MerchandiseOrder::findForMember($orderId, $memberId);
+        if (!$order || !MerchandiseOrder::hasExistingMerchandise($order)) {
+            http_response_code(404);
+            $this->renderError('注文が見つからないか、表示する権限がありません');
+            return;
+        }
+
+        $this->render('shop/payment', [
+            'memberName' => $_SESSION['member_name'] ?? '',
+            'order'      => $order,
+            'mode'       => 'member',
+        ]);
+    }
+
+    /**
      * 会員による振込完了報告 API
      * POST /api/member/store/orders/{id}/submit-payment
+     * body: { paid_amount?: int }（未指定なら注文合計を使用）
      */
     public function submitPayment(array $params): void
     {
@@ -308,7 +345,16 @@ class MerchandiseShopController
             return;
         }
 
-        $ok = MerchandiseOrder::submitPayment($orderId, $memberId);
+        $body       = Request::json();
+        $paidAmount = isset($body['paid_amount']) && $body['paid_amount'] !== ''
+            ? (int)$body['paid_amount']
+            : null;
+        if ($paidAmount !== null && $paidAmount < 0) {
+            Response::error('金額は0以上で入力してください', 400, 'VALIDATION_ERROR');
+            return;
+        }
+
+        $ok = MerchandiseOrder::submitPayment($orderId, $memberId, $paidAmount);
         if (!$ok) {
             Response::error('この注文は報告できません（支払済み・他会員の注文・既に報告済みのいずれか）', 400, 'SUBMIT_NOT_ALLOWED');
             return;

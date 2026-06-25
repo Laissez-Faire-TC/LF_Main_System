@@ -404,11 +404,40 @@ class ExpeditionController
         $round      = intval($round);
         $title      = $round === 1 ? '遠征前集金（参加費）' : '遠征後集金（車代清算）';
 
-        // 同じ回次の既存集金を削除（明細はCASCADEで自動削除）
-        ExpeditionCollection::deleteByRound((int)$params['id'], $round);
+        $expeditionId = (int)$params['id'];
 
-        $collection = ExpeditionCollection::create($params['id'], $round, $title);
-        ExpeditionCollection::generateItems($collection['id']);
+        // 既存集金の削除＋集金作成＋参加者数分の明細生成は、業務的には「集金を作成」の
+        // 1操作。内部の多数のDELETE/INSERTを1行にまとめて記録する（参加者が多いと
+        // そのままでは「n件削除」「n件作成」が並んで誤解を招く）。
+        $run = function () use ($expeditionId, $round, $title) {
+            // 同じ回次の既存集金を削除（明細はCASCADEで自動削除）
+            ExpeditionCollection::deleteByRound($expeditionId, $round);
+            $collection = ExpeditionCollection::create($expeditionId, $round, $title);
+            ExpeditionCollection::generateItems($collection['id']);
+            // ログ用に生成した明細件数を控える
+            $cnt = Database::getInstance()->fetch(
+                "SELECT COUNT(*) AS c FROM expedition_collection_items WHERE collection_id = ?",
+                [$collection['id']]
+            );
+            $collection['_item_count'] = (int)($cnt['c'] ?? 0);
+            return $collection;
+        };
+
+        if (class_exists('AuditLogger')) {
+            $collection = AuditLogger::group([
+                'feature'      => 'expeditions',
+                'method'       => 'POST',
+                'target_table' => 'expeditions',
+                'target_id'    => $expeditionId,
+                'action_label' => $title . 'を作成',
+                'resolve'      => function ($c) {
+                    return ['changes' => ['集金明細' => (int)($c['_item_count'] ?? 0) . '件を生成']];
+                },
+            ], $run);
+        } else {
+            $collection = $run();
+        }
+        unset($collection['_item_count']);
         Response::success($collection);
     }
 

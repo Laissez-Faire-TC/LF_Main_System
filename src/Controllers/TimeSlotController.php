@@ -53,12 +53,20 @@ class TimeSlotController
         try {
             $this->model->updateByCampId($campId, $slots);
 
-            // 参加者のスロット情報を再生成
+            // 参加者のスロット情報を再生成（タイムスロット変更に伴う内部的な再計算）。
+            // 幹部が意図した操作ではなく副作用なので、活動ログには記録しない。
             $participantModel = new Participant();
             $participants = $participantModel->getByCampId($campId);
 
-            foreach ($participants as $participant) {
-                $participantModel->update($participant['id'], []);
+            $suppress = class_exists('AuditLogger') ? AuditLogger::suppress(true) : false;
+            try {
+                foreach ($participants as $participant) {
+                    $participantModel->update($participant['id'], []);
+                }
+            } finally {
+                if (class_exists('AuditLogger')) {
+                    AuditLogger::suppress($suppress);
+                }
             }
 
             $updatedSlots = $this->model->getByCampId($campId);

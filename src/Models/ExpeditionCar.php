@@ -104,18 +104,32 @@ class ExpeditionCar
     public static function delete(int $id): bool
     {
         $db = Database::getInstance();
-        $db->beginTransaction();
 
-        try {
-            $db->execute("DELETE FROM expedition_car_payers WHERE car_id = ?", [$id]);
-            $db->execute("DELETE FROM expedition_car_members WHERE car_id = ?", [$id]);
-            $result = $db->execute("DELETE FROM expedition_cars WHERE id = ?", [$id]) > 0;
-            $db->commit();
-            return $result;
-        } catch (Exception $e) {
-            $db->rollback();
-            throw $e;
+        // 立替者・乗員・車本体の3テーブルDELETEは「車を削除」の1操作。1行にまとめる。
+        $run = function () use ($db, $id) {
+            $db->beginTransaction();
+            try {
+                $db->execute("DELETE FROM expedition_car_payers WHERE car_id = ?", [$id]);
+                $db->execute("DELETE FROM expedition_car_members WHERE car_id = ?", [$id]);
+                $result = $db->execute("DELETE FROM expedition_cars WHERE id = ?", [$id]) > 0;
+                $db->commit();
+                return $result;
+            } catch (Exception $e) {
+                $db->rollback();
+                throw $e;
+            }
+        };
+
+        if (class_exists('AuditLogger')) {
+            return (bool)AuditLogger::group([
+                'feature'      => 'expeditions',
+                'method'       => 'DELETE',
+                'target_table' => 'expedition_cars',
+                'target_id'    => $id,
+                'action_label' => '車を削除（乗員・立替者含む）',
+            ], $run);
         }
+        return $run();
     }
 
     /**
@@ -212,6 +226,28 @@ class ExpeditionCar
      * 戻り値: ['cars' => [...], 'warnings' => [...]]
      */
     public static function autoAssignOutbound(int $expedition_id, array $capacities = [], array $soloBookers = [], array $selectedBookers = [], array $pinnedMembers = []): array
+    {
+        // 内部で多数の DELETE/INSERT（既存車削除→新車作成→乗車割当）に分かれるが、
+        // 業務的には「往路の車割を自動作成」という1操作。1行にまとめて記録する。
+        $run = fn() => self::autoAssignOutboundInner($expedition_id, $capacities, $soloBookers, $selectedBookers, $pinnedMembers);
+
+        if (class_exists('AuditLogger')) {
+            return AuditLogger::group([
+                'feature'      => 'expeditions',
+                'method'       => 'POST',
+                'target_table' => 'expeditions',
+                'target_id'    => $expedition_id,
+                'action_label' => '往路の車割を自動作成',
+                'resolve'      => function ($result) {
+                    $cars = is_array($result) ? ($result['cars'] ?? []) : [];
+                    return ['changes' => ['作成した車' => count($cars) . '台']];
+                },
+            ], $run);
+        }
+        return $run();
+    }
+
+    private static function autoAssignOutboundInner(int $expedition_id, array $capacities = [], array $soloBookers = [], array $selectedBookers = [], array $pinnedMembers = []): array
     {
         $db = Database::getInstance();
 

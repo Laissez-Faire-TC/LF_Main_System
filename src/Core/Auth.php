@@ -37,6 +37,7 @@ class Auth
             $_SESSION['admin_email'] = null;
             $_SESSION['admin_perms'] = [];
             $_SESSION['admin_login_type'] = 'password';
+            self::openSession('password', null, null, null);
             return true;
         }
 
@@ -56,9 +57,44 @@ class Auth
         $_SESSION['login_time']       = time();
         $_SESSION['admin_id']         = (int)$adminUser['id'];
         $_SESSION['admin_email']      = $adminUser['email'];
+        $_SESSION['admin_name']       = $adminUser['name'] ?? null;
         $_SESSION['admin_is_admin']   = self::isFixedAdminEmail($adminUser['email']) || (int)$adminUser['is_admin'] === 1;
         $_SESSION['admin_perms']      = array_values($perms);
         $_SESSION['admin_login_type'] = 'google';
+        self::openSession(
+            'google',
+            (int)$adminUser['id'],
+            $adminUser['email'] ?? null,
+            $adminUser['name'] ?? null
+        );
+    }
+
+    /**
+     * ログインセッション監視（admin_sessions）の行を開始する。
+     * セッションに行IDと最終touch時刻を保持。記録失敗はログインを止めない。
+     */
+    private static function openSession(string $loginType, ?int $adminId, ?string $email, ?string $name): void
+    {
+        if (!class_exists('AdminSession')) return;
+        try {
+            // 再ログイン等で前のセッション行が継続中なら閉じてから開く
+            if (!empty($_SESSION['admin_session_id'])) {
+                (new AdminSession())->close((int)$_SESSION['admin_session_id'], 'logout');
+            }
+            $ua = $_SERVER['HTTP_USER_AGENT'] ?? null;
+            $sid = (new AdminSession())->open([
+                'admin_user_id' => $adminId,
+                'admin_email'   => $email,
+                'admin_name'    => $name,
+                'login_type'    => $loginType,
+                'ip_address'    => $_SERVER['REMOTE_ADDR'] ?? null,
+                'user_agent'    => $ua !== null ? mb_substr($ua, 0, 255) : null,
+            ]);
+            $_SESSION['admin_session_id'] = $sid;
+            $_SESSION['admin_session_touch'] = time();
+        } catch (Throwable $e) {
+            error_log('Auth::openSession failed: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -66,15 +102,36 @@ class Auth
      */
     public static function logout(): void
     {
+        self::closeSession('logout');
         unset(
             $_SESSION[self::SESSION_KEY],
             $_SESSION['login_time'],
             $_SESSION['admin_id'],
             $_SESSION['admin_email'],
+            $_SESSION['admin_name'],
             $_SESSION['admin_is_admin'],
             $_SESSION['admin_perms'],
-            $_SESSION['admin_login_type']
+            $_SESSION['admin_login_type'],
+            $_SESSION['admin_session_id'],
+            $_SESSION['admin_session_touch']
         );
+    }
+
+    /**
+     * セッション監視行を終了させる（ログアウト/切れ）。
+     *
+     * @param string $reason 'logout' / 'timeout'
+     */
+    private static function closeSession(string $reason): void
+    {
+        if (!class_exists('AdminSession')) return;
+        $sid = $_SESSION['admin_session_id'] ?? 0;
+        if ((int)$sid <= 0) return;
+        try {
+            (new AdminSession())->close((int)$sid, $reason);
+        } catch (Throwable $e) {
+            error_log('Auth::closeSession failed: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -92,12 +149,38 @@ class Auth
 
         if (isset($_SESSION['login_time'])) {
             if (time() - $_SESSION['login_time'] > $lifetime) {
+                self::closeSession('timeout');
                 self::logout();
                 return false;
             }
         }
 
+        // 最終アクセス時刻を更新（毎リクエストだとDB負荷になるため60秒間隔にスロットリング）
+        self::touchSession();
+
         return true;
+    }
+
+    /**
+     * セッション監視の最終アクセス時刻を更新する（スロットリング付き）。
+     * check() から呼ばれる。前回更新から60秒未満なら何もしない。
+     */
+    private static function touchSession(): void
+    {
+        if (!class_exists('AdminSession')) return;
+        $sid = $_SESSION['admin_session_id'] ?? 0;
+        if ((int)$sid <= 0) return;
+
+        $now  = time();
+        $last = $_SESSION['admin_session_touch'] ?? 0;
+        if ($now - $last < 60) return; // 60秒以内は更新しない
+
+        $_SESSION['admin_session_touch'] = $now;
+        try {
+            (new AdminSession())->touch((int)$sid);
+        } catch (Throwable $e) {
+            error_log('Auth::touchSession failed: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -159,6 +242,78 @@ class Auth
                 exit;
             }
         }
+    }
+
+    /**
+     * 幹部セッションでログイン中か（会員セッション・未ログインと区別する）。
+     * 会員ポータル／公開フォームでは個人情報マスキングを適用しないために使う。
+     */
+    public static function isAdminContext(): bool
+    {
+        return self::check() && isset($_SESSION['admin_login_type']);
+    }
+
+    /**
+     * 会員の指定カラムを閲覧できるか（個人情報マスキング判定）。
+     *
+     * 設計（明示許可制／ホワイトリスト）:
+     *   - Admin（全権）は常に全項目を閲覧可。
+     *   - それ以外は members.field.<column> を「明示的に」保有する項目のみ閲覧可。
+     *   - `members`（名簿アクセス権）を持っていても、個人情報項目は自動では見えない。
+     *     ＝ members は「名簿を開ける」権限であって「全項目を見る」権限ではない。
+     *
+     * 注意: can() の前方一致は使わない（members が全 field を開けてしまうため）。
+     */
+    public static function canViewMemberField(string $column): bool
+    {
+        if (!self::check()) return false;
+        if (!empty($_SESSION['admin_is_admin'])) return true; // Admin は常に全項目可
+
+        $perms = $_SESSION['admin_perms'] ?? [];
+        return in_array('members.field.' . $column, $perms, true);
+    }
+
+    /**
+     * 会員データ（1件 or 複数件）から、現在の幹部が閲覧できない個人情報項目を除去する。
+     * 幹部セッションでない場合（会員ポータル・公開フォーム・未ログイン）は何もしない。
+     *
+     * @param array $data 連想配列1件、または連想配列の配列
+     * @return array マスキング後のデータ
+     */
+    public static function maskMemberData(array $data): array
+    {
+        // 幹部以外（会員本人・公開）は対象外。Adminは全項目可なので除去不要。
+        if (!self::isAdminContext() || !empty($_SESSION['admin_is_admin'])) {
+            return $data;
+        }
+
+        $config = require CONFIG_PATH . '/admin.php';
+        $fields = $config['member_fields'] ?? [];
+
+        // 閲覧不可なカラムを列挙（明示許可制：canViewMemberField で判定）
+        // ※ can() の前方一致を使うと members 保持者が全項目通ってしまうため使わない。
+        $hidden = [];
+        foreach ($fields as $f) {
+            if (!self::canViewMemberField($f['column'])) {
+                $hidden[] = $f['column'];
+            }
+        }
+        if (empty($hidden)) {
+            return $data;
+        }
+
+        $strip = function (array $row) use ($hidden): array {
+            foreach ($hidden as $col) {
+                unset($row[$col]);
+            }
+            return $row;
+        };
+
+        // 配列の配列か単一行かを判定（単一行は最初の要素が配列でない）
+        if ($data === [] || !is_array(reset($data))) {
+            return $strip($data);
+        }
+        return array_map($strip, $data);
     }
 
     /**

@@ -96,6 +96,8 @@ class Router
                 $params = array_filter($matches, 'is_string', ARRAY_FILTER_USE_KEY);
 
                 // ハンドラー実行
+                // ※ 活動ログ記録は Database 層（AuditLogger）で自動的に行う。
+                //    DB書き込み単位で差分付きで記録するため、ここでは何もしない。
                 $this->executeHandler($route['handler'], $params);
                 return;
             }

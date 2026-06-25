@@ -116,7 +116,6 @@ class HpController
             'image_path'    => Request::get('image_path') ?? null,
             'anchor_id'     => Request::get('anchor_id') ?? null,
             'is_quick_news' => Request::get('is_quick_news') ?? 0,
-            'sort_order'    => Request::get('sort_order') ?? 0,
         ]);
 
         Response::success(['id' => $id], '作成しました');
@@ -144,7 +143,6 @@ class HpController
             'image_path'    => Request::get('image_path')    ?? $item['image_path'],
             'anchor_id'     => Request::get('anchor_id')     ?? $item['anchor_id'],
             'is_quick_news' => Request::get('is_quick_news') ?? $item['is_quick_news'],
-            'sort_order'    => Request::get('sort_order')    ?? $item['sort_order'],
         ]);
 
         Response::success([], '更新しました');
@@ -191,6 +189,7 @@ class HpController
         }
 
         $data = [];
+        if (Request::get('month_label')!== null) $data['month_label']= Request::get('month_label');
         if (Request::get('title')     !== null) $data['title']     = Request::get('title');
         if (Request::get('text_html') !== null) $data['text_html'] = Request::get('text_html');
         if (Request::get('extra_html')!== null) $data['extra_html']= Request::get('extra_html');

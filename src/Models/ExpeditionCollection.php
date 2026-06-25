@@ -88,17 +88,31 @@ class ExpeditionCollection
     public static function delete(int $id): bool
     {
         $db = Database::getInstance();
-        $db->beginTransaction();
 
-        try {
-            $db->execute("DELETE FROM expedition_collection_items WHERE collection_id = ?", [$id]);
-            $result = $db->execute("DELETE FROM expedition_collections WHERE id = ?", [$id]) > 0;
-            $db->commit();
-            return $result;
-        } catch (Exception $e) {
-            $db->rollback();
-            throw $e;
+        // 明細＋集金本体のDELETEは「集金を削除」の1操作。1行にまとめる。
+        $run = function () use ($db, $id) {
+            $db->beginTransaction();
+            try {
+                $db->execute("DELETE FROM expedition_collection_items WHERE collection_id = ?", [$id]);
+                $result = $db->execute("DELETE FROM expedition_collections WHERE id = ?", [$id]) > 0;
+                $db->commit();
+                return $result;
+            } catch (Exception $e) {
+                $db->rollback();
+                throw $e;
+            }
+        };
+
+        if (class_exists('AuditLogger')) {
+            return (bool)AuditLogger::group([
+                'feature'      => 'expeditions',
+                'method'       => 'DELETE',
+                'target_table' => 'expedition_collections',
+                'target_id'    => $id,
+                'action_label' => '集金を削除（明細含む）',
+            ], $run);
         }
+        return $run();
     }
 
     /**

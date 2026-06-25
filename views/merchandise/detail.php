@@ -40,6 +40,11 @@
                         <label class="form-label">販売終了日時</label>
                         <input type="datetime-local" class="form-control" id="editSaleEnd" onchange="scheduleSave()">
                     </div>
+                    <div class="col-md-6">
+                        <label class="form-label">入金期限</label>
+                        <input type="date" class="form-control" id="editPaymentDeadline" onchange="scheduleSave()">
+                        <div class="form-text">この日を過ぎても未入金の注文はペナルティ点の対象になります（空欄なら対象外）。</div>
+                    </div>
                     <div class="col-12">
                         <label class="form-label">説明</label>
                         <textarea class="form-control" id="editDesc" rows="4" onchange="scheduleSave()"
@@ -175,6 +180,7 @@ function renderBasic() {
     document.getElementById('editDesc').value      = m.description || '';
     document.getElementById('editSaleStart').value = (m.sale_start || '').replace(' ', 'T').substring(0, 16);
     document.getElementById('editSaleEnd').value   = (m.sale_end   || '').replace(' ', 'T').substring(0, 16);
+    document.getElementById('editPaymentDeadline').value = (m.payment_deadline || '').substring(0, 10);
     document.getElementById('editActive').checked  = (m.is_active == 1);
 }
 
@@ -191,6 +197,7 @@ async function saveBasic() {
         description: document.getElementById('editDesc').value,
         sale_start:  document.getElementById('editSaleStart').value || null,
         sale_end:    document.getElementById('editSaleEnd').value   || null,
+        payment_deadline: document.getElementById('editPaymentDeadline').value || null,
         is_active:   document.getElementById('editActive').checked ? 1 : 0,
     };
     const res = await fetch('/api/merchandise/' + merchandiseId, {
@@ -395,6 +402,11 @@ async function loadOrders() {
                     </div>
                 </div>
                 <ul class="mt-2 mb-1">${items}</ul>
+                ${(Number(o.payment_submitted) === 1 && o.paid_amount !== null && o.paid_amount !== undefined)
+                    ? `<div class="small ${Number(o.paid_amount) !== Number(o.total_amount) ? 'text-danger fw-bold' : 'text-muted'}">
+                         申告金額: ¥${Number(o.paid_amount).toLocaleString()}${Number(o.paid_amount) !== Number(o.total_amount) ? '（注文合計と相違）' : ''}
+                       </div>`
+                    : ''}
                 ${o.buyer_contact ? `<small class="text-muted">連絡先: ${escapeHtml(o.buyer_contact)}</small>` : ''}
                 ${o.notes ? `<div class="text-muted small">備考: ${escapeHtml(o.notes)}</div>` : ''}
             </div>

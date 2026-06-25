@@ -76,6 +76,24 @@
                         </div>
                     </div>
                 </div>
+
+                <hr class="my-3">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" id="eventAllowGuest" onchange="onAllowGuestChange()">
+                            <label class="form-check-label" for="eventAllowGuest">会員以外（ゲスト）の申し込みを受け付ける</label>
+                        </div>
+                    </div>
+                    <div class="col-md-6" id="guestTypeWrap" style="display:none;">
+                        <label class="form-label fw-semibold">ゲストフォームの種別 <span class="text-danger">*</span></label>
+                        <select class="form-select" id="eventGuestType">
+                            <option value="shinkan">新歓（氏名・カナ・学科で本人特定）</option>
+                            <option value="obog">OBOG（氏名・カナ・代で本人特定）</option>
+                        </select>
+                        <div class="form-text">本人特定の項目が種別ごとに変わります。作成後に変更も可能です。</div>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
@@ -214,7 +232,16 @@ function showCreateModal() {
     document.getElementById('eventDeadline').value      = '';
     document.getElementById('eventAllowWaitlist').checked = false;
     document.getElementById('eventIsActive').checked     = false;
+    document.getElementById('eventAllowGuest').checked   = false;
+    document.getElementById('eventGuestType').value      = 'shinkan';
+    onAllowGuestChange();
     new bootstrap.Modal(document.getElementById('eventModal')).show();
+}
+
+// ゲスト受付ONのときだけ種別選択を表示
+function onAllowGuestChange() {
+    const on = document.getElementById('eventAllowGuest').checked;
+    document.getElementById('guestTypeWrap').style.display = on ? 'block' : 'none';
 }
 
 function showEditModal(id) {
@@ -233,6 +260,9 @@ function showEditModal(id) {
     document.getElementById('eventDeadline').value        = e.deadline || '';
     document.getElementById('eventAllowWaitlist').checked = !!parseInt(e.allow_waitlist);
     document.getElementById('eventIsActive').checked      = !!parseInt(e.is_active);
+    document.getElementById('eventAllowGuest').checked    = !!parseInt(e.allow_guest);
+    document.getElementById('eventGuestType').value       = e.guest_type || 'shinkan';
+    onAllowGuestChange();
     new bootstrap.Modal(document.getElementById('eventModal')).show();
 }
 
@@ -256,6 +286,9 @@ async function saveEvent() {
         deadline:          document.getElementById('eventDeadline').value || null,
         allow_waitlist:    document.getElementById('eventAllowWaitlist').checked ? 1 : 0,
         is_active:         document.getElementById('eventIsActive').checked ? 1 : 0,
+        allow_guest:       document.getElementById('eventAllowGuest').checked ? 1 : 0,
+        guest_type:        document.getElementById('eventAllowGuest').checked
+                               ? document.getElementById('eventGuestType').value : null,
     };
 
     try {

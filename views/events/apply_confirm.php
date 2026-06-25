@@ -93,6 +93,45 @@ $timeLabel = !empty($event['event_time']) ? substr($event['event_time'], 0, 5) :
                 定員に達しているため<strong>キャンセル待ち</strong>として登録されます（現在<?= $waitlistCount ?>人待ち）
             </div>
             <?php endif; ?>
+            <?php foreach (($memberFields ?? []) as $f):
+                $fid = (int)$f['id'];
+                $required = !empty($f['is_required']);
+                $opts = is_array($f['options'] ?? null) ? $f['options'] : [];
+            ?>
+            <div class="mb-3">
+                <label class="form-label small fw-semibold">
+                    <?= htmlspecialchars($f['label']) ?>
+                    <?= $required ? '<span class="text-danger">*</span>' : '' ?>
+                </label>
+                <?php if (!empty($f['description'])): ?>
+                    <div class="form-text mt-0 mb-1" style="white-space:pre-wrap;"><?= htmlspecialchars($f['description']) ?></div>
+                <?php endif; ?>
+                <?php if ($f['type'] === 'textarea'): ?>
+                    <textarea class="form-control form-control-sm member-field" data-fid="<?= $fid ?>" rows="2"></textarea>
+                <?php elseif ($f['type'] === 'select'): ?>
+                    <select class="form-select form-select-sm member-field" data-fid="<?= $fid ?>">
+                        <option value="">選択してください</option>
+                        <?php foreach ($opts as $o): ?>
+                            <option value="<?= htmlspecialchars($o) ?>"><?= htmlspecialchars($o) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                <?php elseif ($f['type'] === 'radio'): ?>
+                    <div>
+                        <?php foreach ($opts as $i => $o): ?>
+                            <div class="form-check">
+                                <input class="form-check-input member-field" type="radio"
+                                       name="mfield_<?= $fid ?>" data-fid="<?= $fid ?>"
+                                       id="mfield_<?= $fid ?>_<?= $i ?>" value="<?= htmlspecialchars($o) ?>">
+                                <label class="form-check-label" for="mfield_<?= $fid ?>_<?= $i ?>"><?= htmlspecialchars($o) ?></label>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php else: ?>
+                    <input type="text" class="form-control form-control-sm member-field" data-fid="<?= $fid ?>" maxlength="255">
+                <?php endif; ?>
+            </div>
+            <?php endforeach; ?>
+
             <div class="mb-3">
                 <label class="form-label small">備考（任意）</label>
                 <textarea class="form-control form-control-sm" id="noteInput" rows="2"
@@ -118,10 +157,21 @@ async function submitApply() {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 送信中...';
 
     try {
+        // 会員向けカスタム項目の回答を収集
+        const values = {};
+        document.querySelectorAll('.member-field').forEach(el => {
+            const fid = el.dataset.fid;
+            if (el.type === 'radio') {
+                if (el.checked) values[fid] = el.value;
+            } else {
+                values[fid] = el.value.trim();
+            }
+        });
+
         const res  = await fetch(`/api/apply/event/${APPLY_TOKEN}`, {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ note: document.getElementById('noteInput').value.trim() }),
+            body:    JSON.stringify({ note: document.getElementById('noteInput').value.trim(), values }),
         });
         const data = await res.json();
         if (data.success) {

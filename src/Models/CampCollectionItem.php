@@ -85,6 +85,12 @@ class CampCollectionItem
             return false;
         }
 
+        // 入金確認（admin_confirmed=1）の場合、期限超過していたら遅延を確定記録（ペナルティ永続化）
+        if (array_key_exists('admin_confirmed', $data) && (int)$data['admin_confirmed'] === 1
+            && class_exists('MemberPenalty')) {
+            (new MemberPenalty())->recordSnapshot('camp', $id);
+        }
+
         $values[] = $id;
         return $this->db->execute(
             "UPDATE camp_collection_items SET " . implode(', ', $fields) . " WHERE id = ?",
@@ -97,6 +103,10 @@ class CampCollectionItem
      */
     public function submit(int $id, ?string $lateReason): bool
     {
+        // 提出（入金報告）時点で期限超過していたら遅延を確定記録（ペナルティ永続化）
+        if (class_exists('MemberPenalty')) {
+            (new MemberPenalty())->recordSnapshot('camp', $id);
+        }
         return $this->db->execute(
             "UPDATE camp_collection_items
              SET submitted = 1, submitted_at = NOW(), late_reason = ?

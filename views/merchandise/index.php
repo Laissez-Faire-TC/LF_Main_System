@@ -1,9 +1,27 @@
-<div class="d-flex justify-content-between align-items-center mb-4">
+<div class="d-flex justify-content-between align-items-center mb-3">
     <h2 class="mb-0"><i class="bi bi-bag"></i> 物販管理</h2>
-    <button class="btn btn-primary" onclick="openCreateModal()">
+    <button class="btn btn-primary" id="createMerchBtn" onclick="openCreateModal()">
         <i class="bi bi-plus"></i> 新規商品
     </button>
 </div>
+
+<!-- タブ -->
+<ul class="nav nav-tabs mb-4" id="merchTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="tab-products" data-bs-toggle="tab" data-bs-target="#pane-products" type="button" role="tab">
+            <i class="bi bi-grid"></i> 商品一覧
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-payments" data-bs-toggle="tab" data-bs-target="#pane-payments" type="button" role="tab">
+            <i class="bi bi-cash-coin"></i> 支払い確認
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content">
+<!-- ===== 商品一覧タブ ===== -->
+<div class="tab-pane fade show active" id="pane-products" role="tabpanel">
 
 <!-- 未入会の購入者（学籍番号が会員DBに無い） -->
 <div id="unenrolledSection" class="card border-danger mb-4 d-none">
@@ -36,6 +54,118 @@
 <div id="merchandiseList">
     <div class="text-center text-muted py-5">読み込み中...</div>
 </div>
+
+</div><!-- /pane-products -->
+
+<!-- ===== 支払い確認タブ ===== -->
+<div class="tab-pane fade" id="pane-payments" role="tabpanel">
+
+    <!-- 入金確認済みの合計金額 -->
+    <div class="row g-3 mb-3">
+        <div class="col-md-5">
+            <div class="card h-100 border-success">
+                <div class="card-body">
+                    <div class="text-muted small mb-1">
+                        <i class="bi bi-cash-stack text-success"></i> 入金確認済みの総額（全期間）
+                    </div>
+                    <div class="fs-4 fw-bold text-success" id="paidTotalAll">¥0</div>
+                    <div class="small text-muted" id="paidCountAll">0 件</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-7">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="text-muted small mb-2">
+                        <i class="bi bi-calendar-range"></i> 期間を指定して総額を確認
+                    </div>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-sm">
+                            <label class="form-label small mb-1">開始日</label>
+                            <input type="date" class="form-control form-control-sm" id="paidFrom">
+                        </div>
+                        <div class="col-sm">
+                            <label class="form-label small mb-1">終了日</label>
+                            <input type="date" class="form-control form-control-sm" id="paidTo">
+                        </div>
+                        <div class="col-sm-auto">
+                            <button class="btn btn-sm btn-outline-secondary" type="button" id="paidRangeClear">クリア</button>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <span class="fs-5 fw-bold" id="paidTotalRange">¥0</span>
+                        <span class="small text-muted ms-1" id="paidCountRange">0 件</span>
+                        <span class="small text-muted ms-1">（入金確認日 基準）</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 現金計算 -->
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-calculator"></i> 現金計算</span>
+            <button class="btn btn-sm btn-outline-secondary" type="button" id="cashClear">
+                <i class="bi bi-arrow-counterclockwise"></i> クリア
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="row g-2" id="cashRows"></div>
+            <hr>
+            <div class="d-flex justify-content-end align-items-baseline gap-2">
+                <span class="text-muted">合計</span>
+                <span class="fs-3 fw-bold text-primary" id="cashTotal">¥0</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-6">
+                    <label class="form-label small mb-1">購入者検索</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control" id="paySearch"
+                               placeholder="氏名・カナ・学籍番号で検索">
+                        <button class="btn btn-outline-secondary" type="button" id="paySearchClear" title="クリア">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small mb-1">支払い状態</label>
+                    <select class="form-select" id="payStatusFilter">
+                        <option value="">すべて</option>
+                        <option value="unpaid" selected>未入金</option>
+                        <option value="paid">入金済</option>
+                        <option value="cancelled">キャンセル</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" id="payReportedOnly">
+                        <label class="form-check-label small" for="payReportedOnly">
+                            振込報告済みのみ
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="text-muted small">確認待ち（未入金かつ振込報告済み）を上に表示します。</span>
+        <span class="badge bg-secondary" id="payCount">0 件</span>
+    </div>
+
+    <div id="paymentsList">
+        <div class="text-center text-muted py-5">読み込み中...</div>
+    </div>
+</div><!-- /pane-payments -->
+
+</div><!-- /tab-content -->
 
 <!-- 新規作成モーダル -->
 <div class="modal fade" id="createModal" tabindex="-1">
@@ -70,11 +200,227 @@
 
 <script>
 let _createModal;
+let _payLoaded = false;
+let _paySearchTimer = null;
+
 document.addEventListener('DOMContentLoaded', () => {
     _createModal = new bootstrap.Modal(document.getElementById('createModal'));
     loadList();
     loadPending();
+    initCashCalc();
+
+    const createBtn = document.getElementById('createMerchBtn');
+
+    // 支払い確認タブを初めて開いたときに読み込む
+    document.getElementById('tab-payments').addEventListener('shown.bs.tab', () => {
+        createBtn.classList.add('d-none'); // 支払いタブでは新規商品ボタンを隠す
+        if (!_payLoaded) { _payLoaded = true; loadPayments(); loadPaidTotals(); }
+    });
+    document.getElementById('tab-products').addEventListener('shown.bs.tab', () => {
+        createBtn.classList.remove('d-none');
+    });
+
+    // 検索（入力300ms後に自動実行）
+    const searchInput = document.getElementById('paySearch');
+    searchInput.addEventListener('input', () => {
+        clearTimeout(_paySearchTimer);
+        _paySearchTimer = setTimeout(loadPayments, 300);
+    });
+    document.getElementById('paySearchClear').addEventListener('click', () => {
+        searchInput.value = '';
+        loadPayments();
+    });
+    document.getElementById('payStatusFilter').addEventListener('change', loadPayments);
+    document.getElementById('payReportedOnly').addEventListener('change', loadPayments);
+
+    // 入金確認済み総額の期間フィルタ
+    document.getElementById('paidFrom').addEventListener('change', loadPaidTotals);
+    document.getElementById('paidTo').addEventListener('change', loadPaidTotals);
+    document.getElementById('paidRangeClear').addEventListener('click', () => {
+        document.getElementById('paidFrom').value = '';
+        document.getElementById('paidTo').value = '';
+        loadPaidTotals();
+    });
 });
+
+// ===== 現金計算 =====
+const CASH_DENOMS = [
+    { v: 10000, label: '1万円札' },
+    { v: 5000,  label: '5千円札' },
+    { v: 1000,  label: '千円札' },
+    { v: 500,   label: '500円玉' },
+    { v: 100,   label: '100円玉' },
+    { v: 50,    label: '50円玉' },
+    { v: 10,    label: '10円玉' },
+    { v: 5,     label: '5円玉' },
+    { v: 1,     label: '1円玉' },
+];
+
+function initCashCalc() {
+    const root = document.getElementById('cashRows');
+    if (!root) return;
+    root.innerHTML = CASH_DENOMS.map(d => `
+        <div class="col-12 col-sm-6 col-lg-4">
+            <div class="input-group input-group-sm">
+                <span class="input-group-text" style="min-width: 6rem;">${d.label}</span>
+                <input type="number" class="form-control text-end cash-qty" data-v="${d.v}"
+                       min="0" step="1" inputmode="numeric" placeholder="0">
+                <span class="input-group-text">枚</span>
+                <span class="input-group-text text-muted cash-sub" style="min-width: 6.5rem;" data-v="${d.v}">¥0</span>
+            </div>
+        </div>`).join('');
+
+    root.querySelectorAll('.cash-qty').forEach(inp => {
+        inp.addEventListener('input', updateCashTotal);
+    });
+    document.getElementById('cashClear').addEventListener('click', () => {
+        root.querySelectorAll('.cash-qty').forEach(inp => { inp.value = ''; });
+        updateCashTotal();
+    });
+    updateCashTotal();
+}
+
+function updateCashTotal() {
+    let total = 0;
+    document.querySelectorAll('#cashRows .cash-qty').forEach(inp => {
+        const v   = Number(inp.dataset.v);
+        const qty = Math.max(0, parseInt(inp.value) || 0);
+        const sub = v * qty;
+        total += sub;
+        const subEl = document.querySelector(`#cashRows .cash-sub[data-v="${v}"]`);
+        if (subEl) {
+            subEl.textContent = '¥' + sub.toLocaleString();
+            subEl.classList.toggle('text-muted', sub === 0);
+            subEl.classList.toggle('fw-bold', sub > 0);
+        }
+    });
+    document.getElementById('cashTotal').textContent = '¥' + total.toLocaleString();
+}
+
+// 入金確認済み注文の総額（全期間＋指定期間）を読み込む
+async function loadPaidTotals() {
+    const from = document.getElementById('paidFrom').value;
+    const to   = document.getElementById('paidTo').value;
+
+    // 全期間の総額
+    try {
+        const res  = await fetch('/api/merchandise/paid-total');
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('paidTotalAll').textContent = '¥' + Number(data.data.total).toLocaleString();
+            document.getElementById('paidCountAll').textContent = `${data.data.count} 件`;
+        }
+    } catch (e) { /* 表示はそのまま */ }
+
+    // 指定期間の総額
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to)   params.set('to', to);
+    try {
+        const res  = await fetch('/api/merchandise/paid-total?' + params.toString());
+        const data = await res.json();
+        if (data.success) {
+            document.getElementById('paidTotalRange').textContent = '¥' + Number(data.data.total).toLocaleString();
+            document.getElementById('paidCountRange').textContent = `${data.data.count} 件`;
+        }
+    } catch (e) { /* 表示はそのまま */ }
+}
+
+async function loadPayments() {
+    const q         = document.getElementById('paySearch').value.trim();
+    const status    = document.getElementById('payStatusFilter').value;
+    const reported  = document.getElementById('payReportedOnly').checked;
+    const root      = document.getElementById('paymentsList');
+    const countEl   = document.getElementById('payCount');
+
+    const params = new URLSearchParams();
+    if (q)        params.set('q', q);
+    if (status)   params.set('status', status);
+    if (reported) params.set('submitted', '1');
+
+    root.innerHTML = '<div class="text-center text-muted py-5">読み込み中...</div>';
+
+    const res  = await fetch('/api/merchandise/payments?' + params.toString());
+    const data = await res.json();
+    if (!data.success) {
+        root.innerHTML = '<div class="alert alert-danger">読み込みに失敗しました</div>';
+        return;
+    }
+    const orders = data.data.orders;
+    countEl.textContent = `${orders.length} 件`;
+
+    if (!orders.length) {
+        root.innerHTML = '<div class="card"><div class="card-body text-center text-muted py-5">該当する注文がありません</div></div>';
+        return;
+    }
+
+    root.innerHTML = orders.map(o => {
+        const items = o.items.map(it => `
+            <li class="small">
+                ${escapeHtml(it.merchandise_name)}${it.color_name ? '／' + escapeHtml(it.color_name) : ''}${it.size_name ? '／' + escapeHtml(it.size_name) : ''} × ${it.quantity}（¥${Number(it.subtotal).toLocaleString()}）
+            </li>`).join('');
+
+        const isReported = (o.payment_status === 'unpaid' && Number(o.payment_submitted) === 1);
+        const paidBadge = o.payment_status === 'paid'
+            ? '<span class="badge bg-success">入金済</span>'
+            : (o.payment_status === 'cancelled'
+                ? '<span class="badge bg-secondary">キャンセル</span>'
+                : '<span class="badge bg-warning text-dark">未入金</span>');
+        const reportedBadge = isReported
+            ? `<span class="badge bg-info text-dark ms-1" title="${o.payment_submitted_at ? '報告: ' + String(o.payment_submitted_at).substring(0,16).replace('T',' ') : ''}"><i class="bi bi-send-check"></i> 振込報告済</span>`
+            : '';
+
+        // 購入者の表示名・識別子
+        const buyerName = o.member_name_kanji || o.buyer_name || '(不明)';
+        const idTag = o.member_id
+            ? `<span class="badge bg-light text-dark border ms-1">学籍 ${escapeHtml(o.member_student_id || '-')}</span>`
+            : (o.pending_student_id
+                ? `<span class="badge bg-warning text-dark ms-1">未入会 ${escapeHtml(o.pending_student_id)}</span>`
+                : '');
+
+        // 申告金額（注文合計と相違あれば赤字）
+        const amountLine = (Number(o.payment_submitted) === 1 && o.paid_amount !== null && o.paid_amount !== undefined)
+            ? `<div class="small ${Number(o.paid_amount) !== Number(o.total_amount) ? 'text-danger fw-bold' : 'text-muted'}">
+                 申告金額: ¥${Number(o.paid_amount).toLocaleString()}${Number(o.paid_amount) !== Number(o.total_amount) ? '（注文合計と相違）' : ''}
+               </div>`
+            : '';
+
+        return `
+        <div class="card mb-2 ${isReported ? 'border-info' : ''}">
+            <div class="card-body py-2">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <strong>${escapeHtml(buyerName)}</strong>${idTag}
+                        ${paidBadge}${reportedBadge}
+                        <small class="text-muted ms-2">${o.created_at ? o.created_at.substring(0, 16).replace('T', ' ') : ''}</small>
+                        <ul class="mt-2 mb-1">${items}</ul>
+                        ${amountLine}
+                        ${o.buyer_contact ? `<small class="text-muted">連絡先: ${escapeHtml(o.buyer_contact)}</small>` : ''}
+                        ${o.notes ? `<div class="text-muted small">備考: ${escapeHtml(o.notes)}</div>` : ''}
+                    </div>
+                    <div class="text-end" style="min-width: 9rem;">
+                        <div class="fw-bold mb-1">¥${Number(o.total_amount).toLocaleString()}</div>
+                        <button class="btn btn-sm ${o.payment_status === 'paid' ? 'btn-outline-success' : (isReported ? 'btn-primary' : 'btn-success')}"
+                                onclick="payTogglePaid(${o.id})">
+                            ${o.payment_status === 'paid' ? '未入金に戻す' : '入金確認'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function payTogglePaid(id) {
+    const res  = await fetch(`/api/merchandise/orders/${id}/toggle-paid`, { method: 'POST' });
+    const data = await res.json();
+    if (data.success) {
+        loadPayments();
+        loadPaidTotals(); // 入金確認状態が変わると総額も変わる
+    } else {
+        alert('更新に失敗しました');
+    }
+}
 
 async function loadPending() {
     const res  = await fetch('/api/merchandise/pending-orders');

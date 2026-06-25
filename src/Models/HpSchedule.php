@@ -44,7 +44,7 @@ class HpSchedule
 
     public function update(int $id, array $data): void
     {
-        $allowed = ['title', 'text_html', 'extra_html', 'images', 'type'];
+        $allowed = ['month_label', 'title', 'text_html', 'extra_html', 'images', 'type'];
         $filtered = array_intersect_key($data, array_flip($allowed));
 
         if (isset($filtered['images']) && is_array($filtered['images'])) {

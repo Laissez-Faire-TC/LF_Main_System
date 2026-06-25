@@ -177,14 +177,18 @@
             <div class="small text-muted">
                 合計 ¥<?= number_format((int)$o['total_amount']) ?>
                 <?php if ($submitted && !empty($o['payment_submitted_at'])): ?>
-                <span class="ms-2">（<?= htmlspecialchars(substr($o['payment_submitted_at'], 0, 16)) ?> 報告済）</span>
+                <span class="ms-2">
+                    （<?= htmlspecialchars(substr($o['payment_submitted_at'], 0, 16)) ?> 報告済<?php
+                        if ($o['paid_amount'] !== null): ?>・申告 ¥<?= number_format((int)$o['paid_amount']) ?><?php endif;
+                    ?>）
+                </span>
                 <?php endif; ?>
             </div>
             <?php if ($o['payment_status'] === 'unpaid' && !$submitted): ?>
-            <button type="button" class="btn btn-sm btn-outline-primary submit-payment-btn"
-                    data-order-id="<?= (int)$o['id'] ?>">
-                <i class="bi bi-send-check"></i> 振込完了を報告
-            </button>
+            <a href="/member/store/orders/<?= (int)$o['id'] ?>/payment"
+               class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-credit-card"></i> 支払いフォーム
+            </a>
             <?php endif; ?>
         </div>
     </div>
@@ -383,34 +387,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // 「振込完了を報告」ボタン（イベント委譲で動的描画にも対応）
-    document.addEventListener('click', (e) => {
-        const btn = e.target.closest('.submit-payment-btn');
-        if (btn) submitPayment(btn);
-    });
+    // 振込完了報告は専用の支払いフォームページ（/member/store/orders/{id}/payment）で行う
 });
-
-async function submitPayment(btn) {
-    const orderId = btn.dataset.orderId;
-    if (!confirm('振込が完了したことを管理者に報告しますか？\n（誤って報告した場合は管理者にご連絡ください）')) return;
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 送信中...';
-    try {
-        const res  = await fetch(`/api/member/store/orders/${orderId}/submit-payment`, { method: 'POST' });
-        const data = await res.json();
-        if (data.success) {
-            location.reload();
-        } else {
-            alert(data.error?.message || '報告に失敗しました');
-            btn.disabled = false;
-            btn.innerHTML = '<i class="bi bi-send-check"></i> 振込完了を報告';
-        }
-    } catch (e) {
-        alert('通信エラーが発生しました');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-send-check"></i> 振込完了を報告';
-    }
-}
 
 function showAddedToast() {
     let toast = document.getElementById('shopToast');

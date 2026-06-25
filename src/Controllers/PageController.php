@@ -20,9 +20,13 @@ class PageController
         $notifModel = new MemberChangeNotification();
         $changeNotifications = $notifModel->getUnread();
 
+        // ゲスト申込の再提出（内容変更）通知
+        $guestResubmissions = (new EventGuestApplication())->getUnconfirmedResubmissions();
+
         $this->render('dashboard', [
             'activeCamps'         => $activeCamps,
             'changeNotifications' => $changeNotifications,
+            'guestResubmissions'  => $guestResubmissions,
         ]);
     }
 

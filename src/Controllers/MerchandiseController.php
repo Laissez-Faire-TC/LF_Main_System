@@ -50,7 +50,7 @@ class MerchandiseController
     public function store(array $params): void
     {
         Auth::requirePermission('merchandise');
-        $data = Request::only(['name', 'description', 'price', 'sale_start', 'sale_end', 'is_active', 'sort_order']);
+        $data = Request::only(['name', 'description', 'price', 'payment_deadline', 'sale_start', 'sale_end', 'is_active', 'sort_order']);
 
         if (empty(trim($data['name'] ?? ''))) {
             Response::error('商品名を入力してください', 400, 'VALIDATION_ERROR');
@@ -64,7 +64,7 @@ class MerchandiseController
     public function update(array $params): void
     {
         Auth::requirePermission('merchandise');
-        $data  = Request::only(['name', 'description', 'price', 'sale_start', 'sale_end', 'is_active', 'sort_order']);
+        $data  = Request::only(['name', 'description', 'price', 'payment_deadline', 'sale_start', 'sale_end', 'is_active', 'sort_order']);
         $merch = Merchandise::update((int)$params['id'], $data);
         if (!$merch) {
             Response::error('商品が見つかりません', 404, 'NOT_FOUND');
@@ -120,6 +120,33 @@ class MerchandiseController
         }
 
         Response::success(['orders' => $orders]);
+    }
+
+    /**
+     * 支払い確認タブ用：全商品横断の注文検索 API
+     * GET /api/merchandise/payments?status=&q=&submitted=
+     */
+    public function searchOrders(array $params): void
+    {
+        Auth::requirePermission('merchandise');
+        $status        = $_GET['status'] ?? null;
+        $q             = $_GET['q'] ?? null;
+        $submittedOnly = !empty($_GET['submitted']);
+        $orders        = MerchandiseOrder::search($status, $q, $submittedOnly);
+        Response::success(['orders' => $orders]);
+    }
+
+    /**
+     * 支払い完了（入金確認済み）注文の合計金額
+     * GET /api/merchandise/paid-total?from=YYYY-MM-DD&to=YYYY-MM-DD
+     * from/to を省略すると全期間の合計を返す。
+     */
+    public function paidTotal(array $params): void
+    {
+        Auth::requirePermission('merchandise');
+        $from = $_GET['from'] ?? null;
+        $to   = $_GET['to'] ?? null;
+        Response::success(MerchandiseOrder::paidTotal($from, $to));
     }
 
     public function showOrder(array $params): void

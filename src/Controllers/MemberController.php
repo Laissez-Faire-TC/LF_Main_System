@@ -108,6 +108,9 @@ class MemberController
             Response::error('会員が見つかりません', 404, 'NOT_FOUND');
         }
 
+        // 閲覧権限のない個人情報項目を除去
+        $member = Auth::maskMemberData($member);
+
         // OAuth連携状況を付加（幹部による救済解除の判断用）
         $oauthModel = new MemberOauthIdentity();
         $member['oauth_providers'] = array_map(
@@ -220,6 +223,16 @@ class MemberController
             'allergy', 'line_name', 'sns_allowed', 'sports_registration_no', 'email',
             'status', 'department_not_set', 'enrollment_year',
         ]);
+
+        // 閲覧権限のない個人情報項目は更新対象から除外。
+        //   見えない項目はフォーム上で空欄になるため、そのまま保存すると既存値を消してしまう。
+        //   権限のない項目は「触らせない」ことで誤消去を防ぐ。
+        $adminConfig = require CONFIG_PATH . '/admin.php';
+        foreach ($adminConfig['member_fields'] ?? [] as $fd) {
+            if (!Auth::canViewMemberField($fd['column'])) {
+                unset($data[$fd['column']]);
+            }
+        }
 
         // 学籍番号の重複チェック（自身を除く）
         if (!empty($data['student_id'])) {
@@ -418,6 +431,18 @@ class MemberController
             }
         } else {
             $columns = $allColumns;
+        }
+
+        // 閲覧権限のない個人情報項目は出力列から除外（ヘッダーごと消す）
+        foreach (array_keys($columns) as $k) {
+            if (!Auth::canViewMemberField($k)) {
+                // member_fields に定義のあるカラムだけが制限対象（他カラムは常に許可）
+                $config = require CONFIG_PATH . '/admin.php';
+                $restricted = array_column($config['member_fields'] ?? [], 'column');
+                if (in_array($k, $restricted, true)) {
+                    unset($columns[$k]);
+                }
+            }
         }
 
         try {

@@ -944,8 +944,9 @@ class ExportService
             $member = $memberMap[$normalizedName] ?? null;
 
             // 年齢計算（会員データの生年月日から）
+            // 生年月日の閲覧権限がない幹部には年齢（生年月日由来）を出力しない
             $age = '';
-            if ($member && !empty($member['birthdate'])) {
+            if ($member && !empty($member['birthdate']) && Auth::canViewMemberField('birthdate')) {
                 $birthdate = new \DateTime($member['birthdate']);
                 $now = new \DateTime();
                 $age = $now->diff($birthdate)->y;
@@ -1157,9 +1158,10 @@ class ExportService
             $sheet->setCellValue('B' . $row, $participant['name']);
             $sheet->setCellValue('C' . $row, 'あり');  // 全員保険加入
             $sheet->setCellValue('D' . $row, $gender);
-            $sheet->setCellValue('E' . $row, $birthdate);
-            $sheet->setCellValue('F' . $row, $address);
-            $sheet->setCellValue('G' . $row, $phone);
+            // 閲覧権限のない幹部には個人情報（生年月日・住所・電話）を出力しない
+            $sheet->setCellValue('E' . $row, Auth::canViewMemberField('birthdate') ? $birthdate : '');
+            $sheet->setCellValue('F' . $row, Auth::canViewMemberField('address')   ? $address   : '');
+            $sheet->setCellValue('G' . $row, Auth::canViewMemberField('phone')     ? $phone     : '');
             $sheet->setCellValue('H' . $row, $participant['use_outbound_bus'] ? '○' : '×');
             $sheet->setCellValue('I' . $row, $participant['use_return_bus'] ? '○' : '×');
 

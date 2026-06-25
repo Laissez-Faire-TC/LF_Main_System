@@ -303,6 +303,9 @@ class MemberPortalController
         $feeItemModel      = new MembershipFeeItem();
         $pendingFees       = $feeItemModel->getPendingByMemberId($memberId);
 
+        // 物販 支払いフォーム（未報告・販売期間内の注文）
+        $pendingMerchandisePayments = MerchandiseOrder::getPendingPaymentsByMemberId($memberId);
+
         // 継続入会受付状態チェック
         $ayModel       = new AcademicYear();
         $renewOpenYear = $ayModel->getRenewOpenYear();
@@ -386,6 +389,7 @@ class MemberPortalController
             'expenseExpeditions'           => $expenseExpeditions,
             'expeditionBooklets'           => $expeditionBooklets,
             'pendingExpeditionCollections' => $pendingExpeditionCollections,
+            'pendingMerchandisePayments'   => $pendingMerchandisePayments,
         ]);
     }
 
@@ -425,14 +429,42 @@ class MemberPortalController
             return;
         }
 
+        // 会員向けカスタム項目の必須チェック＋回答収集
+        $memberFields = (new EventGuestField())->getByEventId($eventId, 'member');
+        $body         = Request::json();
+        $inputValues  = is_array($body['values'] ?? null) ? $body['values'] : [];
+        $values       = [];
+        foreach ($memberFields as $f) {
+            $fid = (int)$f['id'];
+            $val = $inputValues[$fid] ?? ($inputValues[(string)$fid] ?? '');
+            if (is_array($val)) {
+                $val = implode(', ', array_map('strval', $val));
+            }
+            $val = trim((string)$val);
+            if (!empty($f['is_required']) && $val === '') {
+                Response::error("「{$f['label']}」を入力してください", 422, 'REQUIRED');
+                return;
+            }
+            $values[$fid] = $val;
+        }
+
+        $note = Request::get('note') ?: null;
+
+        $saveValues = function () use ($appModel, $eventId, $memberId, $values) {
+            $app = $appModel->findByEventAndMember($eventId, $memberId);
+            if ($app) {
+                (new EventMemberFieldValue())->save((int)$app['id'], $values);
+            }
+        };
+
         // 定員チェック
         $isFull = $event['capacity'] !== null
                && (int)$event['application_count'] >= (int)$event['capacity'];
 
         if ($isFull) {
             if ($event['allow_waitlist']) {
-                $note = Request::get('note') ?? null;
-        $appModel->apply($eventId, $memberId, 'waitlisted', $note);
+                $appModel->apply($eventId, $memberId, 'waitlisted', $note);
+                $saveValues();
                 Response::success(['status' => 'waitlisted'], 'キャンセル待ちに登録しました');
             } else {
                 Response::error('定員に達しているため申し込みできません', 400, 'CAPACITY_FULL');
@@ -440,9 +472,24 @@ class MemberPortalController
             return;
         }
 
-        $note = Request::get('note') ?? null;
         $appModel->apply($eventId, $memberId, 'submitted', $note);
+        $saveValues();
         Response::success(['status' => 'submitted'], '申し込みが完了しました');
+    }
+
+    /**
+     * 企画の会員向けカスタム質問項目を返す（申込モーダル用）
+     * GET /api/member/events/{id}/fields
+     */
+    public function eventFields(array $params): void
+    {
+        if (!$this->checkAuth()) {
+            Response::error('ログインが必要です', 401, 'UNAUTHORIZED');
+            return;
+        }
+        $eventId = (int)$params['id'];
+        $fields  = (new EventGuestField())->getByEventId($eventId, 'member');
+        Response::success(['fields' => $fields]);
     }
 
     /**

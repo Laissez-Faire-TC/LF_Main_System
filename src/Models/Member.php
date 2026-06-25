@@ -42,9 +42,9 @@ class Member
      */
     public function all(): array
     {
-        return $this->db->fetchAll(
+        return Auth::maskMemberData($this->db->fetchAll(
             "SELECT * FROM members ORDER BY name_kana ASC"
-        );
+        ));
     }
 
     /**
@@ -71,11 +71,15 @@ class Member
         $where = [];
         $params = [];
 
-        // 検索条件（名前・カナ）
+        // 検索条件（名前・カナ）※ひらがな・カタカナどちらの入力でもヒットさせる
         if (!empty($filters['search'])) {
-            $where[] = "(name_kanji LIKE ? OR name_kana LIKE ?)";
-            $params[] = "%{$filters['search']}%";
-            $params[] = "%{$filters['search']}%";
+            [$cond, $condParams] = NameSearchService::buildCondition(
+                (string)$filters['search'], ['name_kanji'], ['name_kana']
+            );
+            if ($cond !== '') {
+                $where[] = $cond;
+                foreach ($condParams as $p) $params[] = $p;
+            }
         }
 
         // 配列フィルタをIN句に変換するヘルパー
@@ -127,7 +131,7 @@ class Member
         $params[] = $perPage;
         $params[] = $offset;
 
-        return $this->db->fetchAll($sql, $params);
+        return Auth::maskMemberData($this->db->fetchAll($sql, $params));
     }
 
     /**
@@ -141,11 +145,15 @@ class Member
         $where = [];
         $params = [];
 
-        // 検索条件（名前・カナ）
+        // 検索条件（名前・カナ）※ひらがな・カタカナどちらの入力でもヒットさせる
         if (!empty($filters['search'])) {
-            $where[] = "(name_kanji LIKE ? OR name_kana LIKE ?)";
-            $params[] = "%{$filters['search']}%";
-            $params[] = "%{$filters['search']}%";
+            [$cond, $condParams] = NameSearchService::buildCondition(
+                (string)$filters['search'], ['name_kanji'], ['name_kana']
+            );
+            if ($cond !== '') {
+                $where[] = $cond;
+                foreach ($condParams as $p) $params[] = $p;
+            }
         }
 
         // 配列フィルタをIN句に変換するヘルパー
@@ -339,12 +347,12 @@ class Member
      */
     public function getRecentlyJoined(): array
     {
-        return $this->db->fetchAll(
+        return Auth::maskMemberData($this->db->fetchAll(
             "SELECT * FROM members
              WHERE status = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 60 DAY)
              ORDER BY created_at DESC",
             [self::STATUS_ACTIVE]
-        );
+        ));
     }
 
     /**
@@ -354,10 +362,10 @@ class Member
      */
     public function getPending(): array
     {
-        return $this->db->fetchAll(
+        return Auth::maskMemberData($this->db->fetchAll(
             "SELECT * FROM members WHERE status = ? ORDER BY created_at DESC",
             [self::STATUS_PENDING]
-        );
+        ));
     }
 
     /**
@@ -368,10 +376,10 @@ class Member
      */
     public function getByStatus(string $status): array
     {
-        return $this->db->fetchAll(
+        return Auth::maskMemberData($this->db->fetchAll(
             "SELECT * FROM members WHERE status = ? ORDER BY name_kana ASC",
             [$status]
-        );
+        ));
     }
 
     /**
@@ -463,9 +471,9 @@ class Member
      */
     public function getDepartmentNotSet(): array
     {
-        return $this->db->fetchAll(
+        return Auth::maskMemberData($this->db->fetchAll(
             "SELECT * FROM members WHERE department_not_set = 1 ORDER BY name_kana ASC"
-        );
+        ));
     }
 
     /**
@@ -680,15 +688,15 @@ class Member
     public function findByYear(int $year, ?string $status = null): array
     {
         if ($status) {
-            return $this->db->fetchAll(
+            return Auth::maskMemberData($this->db->fetchAll(
                 "SELECT * FROM members WHERE academic_year = ? AND status = ? ORDER BY name_kana ASC",
                 [$year, $status]
-            );
+            ));
         } else {
-            return $this->db->fetchAll(
+            return Auth::maskMemberData($this->db->fetchAll(
                 "SELECT * FROM members WHERE academic_year = ? ORDER BY name_kana ASC",
                 [$year]
-            );
+            ));
         }
     }
 }

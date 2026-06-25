@@ -74,6 +74,10 @@ class ExpeditionCollectionItem
      */
     public static function submit(int $id, ?string $lateReason): void
     {
+        // 提出（入金報告）時点で期限超過していたら遅延を確定記録（ペナルティ永続化）
+        if (class_exists('MemberPenalty')) {
+            (new MemberPenalty())->recordSnapshot('expedition', $id);
+        }
         Database::getInstance()->execute(
             "UPDATE expedition_collection_items
              SET submitted = 1, submitted_at = NOW(), late_reason = ?
@@ -97,6 +101,11 @@ class ExpeditionCollectionItem
                 $fields[] = "{$field} = ?";
                 $values[] = $data[$field];
             }
+        }
+
+        // 入金確認（paid=1）の場合、期限超過していたら遅延を確定記録（ペナルティ永続化）
+        if (array_key_exists('paid', $data) && (int)$data['paid'] === 1 && class_exists('MemberPenalty')) {
+            (new MemberPenalty())->recordSnapshot('expedition', $id);
         }
 
         if (!empty($fields)) {

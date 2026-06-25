@@ -96,17 +96,47 @@ class AdminUser
 
     /**
      * 権限キーの集合を丸ごと差し替え
+     *
+     * 内部は「全削除→1件ずつINSERT」のため、そのままだと AuditLogger が
+     * 行ごとに別々のログを残してしまう。ここでは自動記録を抑止し、
+     * before→after（付与/剥奪の差分）を1行にまとめて明示的に記録する。
      */
     public function setPermissions(int $adminUserId, array $keys): void
     {
-        $this->db->execute("DELETE FROM admin_permissions WHERE admin_user_id = ?", [$adminUserId]);
+        // 変更前の権限（差分記録用）
+        $before = $this->getPermissions($adminUserId);
+
+        // 正規化した変更後の権限
+        $after = [];
         foreach (array_unique($keys) as $key) {
             $key = trim((string)$key);
             if ($key === '') continue;
-            $this->db->execute(
-                "INSERT INTO admin_permissions (admin_user_id, permission_key) VALUES (?, ?)",
-                [$adminUserId, $key]
-            );
+            $after[] = $key;
+        }
+
+        // 個別SQLは AuditLogger に記録させない（後でまとめて1行記録する）
+        $suppress = class_exists('AuditLogger') ? AuditLogger::suppress(true) : false;
+        try {
+            $this->db->execute("DELETE FROM admin_permissions WHERE admin_user_id = ?", [$adminUserId]);
+            foreach ($after as $key) {
+                $this->db->execute(
+                    "INSERT INTO admin_permissions (admin_user_id, permission_key) VALUES (?, ?)",
+                    [$adminUserId, $key]
+                );
+            }
+        } finally {
+            if (class_exists('AuditLogger')) {
+                AuditLogger::suppress($suppress); // 元の状態に戻す
+            }
+        }
+
+        // まとめて1行記録（変更があった場合のみ）
+        if (class_exists('AuditLogger')) {
+            // 対象者（誰の権限を変更したか）の表示名を添える
+            $target = $this->find($adminUserId);
+            $targetName = $target['name'] ?? '';
+            if ($targetName === '') $targetName = $target['email'] ?? '';
+            AuditLogger::logPermissionChange($adminUserId, $before, $after, $targetName);
         }
     }
 }

@@ -57,13 +57,23 @@ $fieldLabels = [
                         <span class="text-muted fw-normal small ms-2"><?= $dt ?></span>
                     </div>
                     <div class="small text-muted">
-                        <?php foreach ($changes as $field => $diff):
+                        <?php
+                        // 個人情報マスキング対象のカラム
+                        $piiFields = ['address', 'phone', 'emergency_contact', 'birthdate', 'email', 'line_name', 'allergy'];
+                        foreach ($changes as $field => $diff):
                             $label  = $fieldLabels[$field] ?? $field;
-                            $before = $diff['before'] ?? '（未設定）';
-                            $after  = $diff['after']  ?? '（未設定）';
-                            if ($field === 'sns_allowed') {
-                                $before = $before ? '同意する' : '同意しない';
-                                $after  = $after  ? '同意する' : '同意しない';
+                            // 閲覧権限のない個人情報項目は変更前後の値を伏せる
+                            $masked = in_array($field, $piiFields, true) && !Auth::canViewMemberField($field);
+                            if ($masked) {
+                                $before = '※非表示';
+                                $after  = '※非表示';
+                            } else {
+                                $before = $diff['before'] ?? '（未設定）';
+                                $after  = $diff['after']  ?? '（未設定）';
+                                if ($field === 'sns_allowed') {
+                                    $before = $before ? '同意する' : '同意しない';
+                                    $after  = $after  ? '同意する' : '同意しない';
+                                }
                             }
                         ?>
                         <span class="me-3">
@@ -109,6 +119,59 @@ function updateBadge() {
     } else {
         panel.querySelector('.badge').textContent = remaining;
     }
+}
+</script>
+<?php endif; ?>
+
+<?php if (!empty($guestResubmissions)): ?>
+<div class="card mb-4 border-warning" id="guestResubmitPanel">
+    <div class="card-header bg-warning bg-opacity-25 border-warning d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-pencil-square text-warning"></i> 会員以外（ゲスト）の申し込み内容の変更
+            <span class="badge bg-warning text-dark ms-1"><?= count($guestResubmissions) ?></span>
+        </span>
+        <button class="btn btn-outline-warning btn-sm" onclick="dismissAllResubmit()">すべて確認済みにする</button>
+    </div>
+    <div class="card-body p-0" id="resubmitList">
+        <?php foreach ($guestResubmissions as $i => $r):
+            $dt = date('n/j H:i', strtotime($r['resubmitted_at']));
+        ?>
+        <div class="p-3 d-flex justify-content-between align-items-center <?= $i < count($guestResubmissions) - 1 ? 'border-bottom' : '' ?>" id="resubmit-<?= (int)$r['id'] ?>">
+            <div>
+                <span class="fw-semibold"><?= htmlspecialchars($r['name']) ?></span>
+                <span class="badge bg-info text-dark ms-1">ゲスト</span>
+                さんが申し込み内容を変更しました
+                <div class="small text-muted mt-1">
+                    <a href="/events/<?= (int)$r['event_id'] ?>" class="text-decoration-none"><?= htmlspecialchars($r['event_title']) ?></a>
+                    <span class="ms-2"><?= $dt ?></span>
+                </div>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary ms-3 flex-shrink-0"
+                    onclick="dismissResubmit(<?= (int)$r['id'] ?>)">確認済み</button>
+        </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+
+<script>
+async function dismissResubmit(id) {
+    await fetch(`/api/event-guest-applications/${id}/confirm-resubmit`, { method: 'POST' });
+    const el = document.getElementById(`resubmit-${id}`);
+    if (el) el.remove();
+    const panel = document.getElementById('guestResubmitPanel');
+    if (!panel) return;
+    const remaining = panel.querySelectorAll('[id^="resubmit-"]').length;
+    if (remaining === 0) panel.remove();
+    else panel.querySelector('.badge').textContent = remaining;
+}
+
+async function dismissAllResubmit() {
+    const items = document.querySelectorAll('#resubmitList [id^="resubmit-"]');
+    await Promise.all([...items].map(el => {
+        const id = el.id.replace('resubmit-', '');
+        return fetch(`/api/event-guest-applications/${id}/confirm-resubmit`, { method: 'POST' });
+    }));
+    const panel = document.getElementById('guestResubmitPanel');
+    if (panel) panel.remove();
 }
 </script>
 <?php endif; ?>
@@ -294,6 +357,39 @@ function updateBadge() {
                 <div>
                     <h5 class="mb-1">幹部・権限管理</h5>
                     <small class="text-muted">Googleログイン許可・幹部ごとの権限設定</small>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <a href="/admin-activity-logs" class="dashboard-card card shadow-sm h-100 text-decoration-none">
+            <div class="card-body d-flex align-items-center gap-3 p-4">
+                <div class="dashboard-icon text-danger"><i class="bi bi-clock-history"></i></div>
+                <div>
+                    <h5 class="mb-1">活動ログ</h5>
+                    <small class="text-muted">幹部システムでの操作履歴の確認</small>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <a href="/member-penalties" class="dashboard-card card shadow-sm h-100 text-decoration-none">
+            <div class="card-body d-flex align-items-center gap-3 p-4">
+                <div class="dashboard-icon text-danger"><i class="bi bi-exclamation-triangle"></i></div>
+                <div>
+                    <h5 class="mb-1">ペナルティ点</h5>
+                    <small class="text-muted">入金期限の遅れを自動集計・点数で管理</small>
+                </div>
+            </div>
+        </a>
+    </div>
+    <div class="col-md-4 col-sm-6">
+        <a href="/admin-sessions" class="dashboard-card card shadow-sm h-100 text-decoration-none">
+            <div class="card-body d-flex align-items-center gap-3 p-4">
+                <div class="dashboard-icon text-danger"><i class="bi bi-person-badge"></i></div>
+                <div>
+                    <h5 class="mb-1">ログイン履歴</h5>
+                    <small class="text-muted">幹部のログイン・滞在時間・オンライン状況</small>
                 </div>
             </div>
         </a>

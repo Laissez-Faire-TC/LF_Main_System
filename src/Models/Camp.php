@@ -124,6 +124,32 @@ class Camp
      */
     public function delete(int $id): bool
     {
+        // 削除前に合宿名を控える（削除後は引けないため、ログの対象名に使う）
+        $camp = $this->find($id);
+        $campName = $camp['name'] ?? '';
+
+        // 内部は関連テーブルへの複数DELETEに分かれるが、業務的には「合宿を削除」の1操作。
+        // 異なるテーブルへのDELETEなので自動集約は効かない。group() で1行にまとめる。
+        $run = fn() => $this->deleteInner($id);
+
+        if (class_exists('AuditLogger')) {
+            return (bool)AuditLogger::group([
+                'feature'      => 'camps',
+                'method'       => 'DELETE',
+                'target_table' => 'camps',
+                'target_id'    => $id,
+                'target_name'  => $campName,
+                'action_label' => '合宿を削除（関連データ含む）',
+            ], $run);
+        }
+        return $run();
+    }
+
+    /**
+     * 削除の実体（関連データも含めて削除）
+     */
+    private function deleteInner(int $id): bool
+    {
         $this->db->beginTransaction();
 
         try {

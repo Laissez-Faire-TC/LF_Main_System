@@ -122,12 +122,31 @@
             <?php foreach ($permDefs as $pd): ?>
             <div class="col-6">
               <div class="form-check">
-                <input class="form-check-input perm-check" type="checkbox" value="<?= htmlspecialchars($pd['key']) ?>" id="perm_<?= htmlspecialchars($pd['key']) ?>">
+                <input class="form-check-input perm-check" type="checkbox" value="<?= htmlspecialchars($pd['key']) ?>" id="perm_<?= htmlspecialchars($pd['key']) ?>"
+                  <?= $pd['key'] === 'members' ? 'onchange="toggleFieldPerms()"' : '' ?>>
                 <label class="form-check-label" for="perm_<?= htmlspecialchars($pd['key']) ?>"><?= htmlspecialchars($pd['label']) ?></label>
               </div>
             </div>
             <?php endforeach; ?>
           </div>
+
+          <?php if (!empty($fieldDefs)): ?>
+          <hr class="my-2">
+          <label class="form-label mb-1">会員の個人情報項目（閲覧を許可する項目）</label>
+          <div class="form-text mb-2">
+            個人情報は<strong>原則非表示</strong>です。「会員名簿」権限があっても、ここでチェックした項目だけが表示されます（住所・電話などを見せたい場合は明示的にチェック）。Adminは常に全項目を閲覧できます。
+          </div>
+          <div id="fieldPermArea" class="row g-2">
+            <?php foreach ($fieldDefs as $fd): ?>
+            <div class="col-6">
+              <div class="form-check">
+                <input class="form-check-input perm-check field-perm-check" type="checkbox" value="<?= htmlspecialchars($fd['key']) ?>" id="perm_<?= htmlspecialchars($fd['key']) ?>">
+                <label class="form-check-label" for="perm_<?= htmlspecialchars($fd['key']) ?>"><?= htmlspecialchars($fd['label']) ?></label>
+              </div>
+            </div>
+            <?php endforeach; ?>
+          </div>
+          <?php endif; ?>
         </div>
         <div id="fixedNote" class="alert alert-secondary small mt-2 d-none">
           このアカウントは固定Adminです。区分・状態は変更できません。
@@ -156,6 +175,19 @@ function toggleAdminPerms() {
     const isAdmin = document.getElementById('auIsAdmin').checked;
     document.getElementById('permArea').style.opacity = isAdmin ? '0.4' : '1';
     document.querySelectorAll('.perm-check').forEach(c => c.disabled = isAdmin);
+    toggleFieldPerms();
+}
+
+// 個人情報項目は「明示許可制」。Admin（全権）のときだけ全項目自動表示になるので無効化。
+// members 権限を持っていても、項目は個別に許可が必要（チェック可能なまま）。
+function toggleFieldPerms() {
+    const isAdmin = document.getElementById('auIsAdmin').checked;
+    const area = document.getElementById('fieldPermArea');
+    if (!area) return;
+    area.style.opacity = isAdmin ? '0.4' : '1';
+    document.querySelectorAll('.field-perm-check').forEach(c => {
+        c.disabled = isAdmin; // Admin は常に全項目可なので個別指定は不要
+    });
 }
 
 function openAdminUserModal() {

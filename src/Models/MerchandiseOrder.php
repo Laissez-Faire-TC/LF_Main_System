@@ -31,6 +31,68 @@ class MerchandiseOrder
         return $orders;
     }
 
+    /**
+     * 支払い確認タブ用：全商品横断の注文検索
+     * @param string|null $status     payment_status 絞り込み（unpaid/paid/cancelled）
+     * @param string|null $q          購入者名・カナ・学籍番号・会員名の部分一致
+     * @param bool        $submittedOnly true=会員が振込報告済みの注文のみ
+     */
+    public static function search(?string $status = null, ?string $q = null, bool $submittedOnly = false): array
+    {
+        $where  = [];
+        $params = [];
+
+        if ($status !== null && $status !== '') {
+            $where[]  = 'o.payment_status = ?';
+            $params[] = $status;
+        }
+        if ($submittedOnly) {
+            $where[] = 'o.payment_submitted = 1';
+        }
+        if ($q !== null && trim($q) !== '') {
+            $term = trim($q);
+            // 名前（漢字）・フリガナ（カナ）はひらがな⇔カタカナを揃えて検索
+            [$nameCond, $nameParams] = NameSearchService::buildCondition(
+                $term,
+                ['o.buyer_name', 'm.name_kanji'],
+                ['o.buyer_kana']
+            );
+            // 学籍番号は入力そのままで部分一致
+            $idLike  = '%' . $term . '%';
+            $clauses = [];
+            $params2 = [];
+            if ($nameCond !== '') {
+                $clauses[] = $nameCond;
+                foreach ($nameParams as $p) $params2[] = $p;
+            }
+            $clauses[] = 'o.pending_student_id LIKE ?';
+            $params2[] = $idLike;
+            $clauses[] = 'm.student_id LIKE ?';
+            $params2[] = $idLike;
+
+            $where[]  = '(' . implode(' OR ', $clauses) . ')';
+            $params   = array_merge($params, $params2);
+        }
+
+        $sql = "SELECT o.*, m.name_kanji as member_name_kanji, m.student_id as member_student_id
+                FROM merchandise_orders o
+                LEFT JOIN members m ON m.id = o.member_id";
+        if ($where) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        // 振込報告済みかつ未入金（＝確認待ち）を上に、その後は新しい順
+        $sql .= " ORDER BY (o.payment_status = 'unpaid' AND o.payment_submitted = 1) DESC, o.created_at DESC";
+
+        $orders = Database::getInstance()->fetchAll($sql, $params);
+        foreach ($orders as &$o) {
+            $o['items'] = self::getItems((int)$o['id']);
+        }
+        unset($o);
+
+        // 商品が物販管理から削除された注文は除外
+        return array_values(array_filter($orders, fn($o) => self::hasExistingMerchandise($o)));
+    }
+
     public static function findById(int $id): ?array
     {
         $order = Database::getInstance()->fetch(
@@ -51,6 +113,42 @@ class MerchandiseOrder
             "SELECT * FROM merchandise_order_items WHERE order_id = ? ORDER BY id ASC",
             [$order_id]
         );
+    }
+
+    /**
+     * 支払い完了（入金確認済み）注文の合計金額を集計する。
+     * payment_status = 'paid' の注文の total_amount を合計する。
+     * 期間指定がある場合は paid_at（入金確認日時）で絞り込む。
+     *
+     * @param string|null $from 集計開始日（YYYY-MM-DD）。その日の 00:00:00 以降。
+     * @param string|null $to   集計終了日（YYYY-MM-DD）。その日の 23:59:59 まで。
+     * @return array{total: int, count: int}
+     */
+    public static function paidTotal(?string $from = null, ?string $to = null): array
+    {
+        $where  = ["o.payment_status = 'paid'"];
+        $params = [];
+
+        if ($from !== null && trim($from) !== '') {
+            $where[]  = 'o.paid_at >= ?';
+            $params[] = trim($from) . ' 00:00:00';
+        }
+        if ($to !== null && trim($to) !== '') {
+            $where[]  = 'o.paid_at <= ?';
+            $params[] = trim($to) . ' 23:59:59';
+        }
+
+        $row = Database::getInstance()->fetch(
+            "SELECT COALESCE(SUM(o.total_amount), 0) AS total, COUNT(*) AS cnt
+             FROM merchandise_orders o
+             WHERE " . implode(' AND ', $where),
+            $params
+        );
+
+        return [
+            'total' => (int)($row['total'] ?? 0),
+            'count' => (int)($row['cnt'] ?? 0),
+        ];
     }
 
     /**
@@ -195,15 +293,42 @@ class MerchandiseOrder
      */
     public static function createOrUpdate(array $cart, array $buyer): ?array
     {
-        $existing = self::findExistingUnpaidOrder($buyer, $cart);
-        if ($existing) {
-            $order = self::update((int)$existing['id'], $cart, $buyer);
-            if ($order) $order['was_updated'] = true;
+        $run = function () use ($cart, $buyer) {
+            $existing = self::findExistingUnpaidOrder($buyer, $cart);
+            if ($existing) {
+                $order = self::update((int)$existing['id'], $cart, $buyer);
+                if ($order) $order['was_updated'] = true;
+                return $order;
+            }
+            $order = self::create($cart, $buyer);
+            if ($order) $order['was_updated'] = false;
             return $order;
+        };
+
+        // 幹部が代理操作したときのみ、注文ヘッダ＋明細を「1操作=1行」でまとめて記録。
+        // 会員自身の購入（公開フォーム）は Auth が非幹部のため group() でも記録されない。
+        if (class_exists('AuditLogger')) {
+            return AuditLogger::group([
+                'feature'      => 'merchandise',
+                'target_table' => 'merchandise_orders',
+                'resolve'      => function ($order) {
+                    if (!$order) return ['action_label' => '物販注文を登録（失敗）'];
+                    $qty = 0;
+                    foreach (($order['items'] ?? []) as $it) { $qty += (int)($it['quantity'] ?? 0); }
+                    return [
+                        'method'       => !empty($order['was_updated']) ? 'PUT' : 'POST',
+                        'action_label' => '物販注文を' . (!empty($order['was_updated']) ? '変更' : '作成'),
+                        'target_id'    => (int)($order['id'] ?? 0),
+                        'changes'      => [
+                            '購入者'    => $order['buyer_name'] ?? '',
+                            '点数'      => $qty,
+                            '合計金額'  => (int)($order['total_amount'] ?? 0) . '円',
+                        ],
+                    ];
+                },
+            ], $run);
         }
-        $order = self::create($cart, $buyer);
-        if ($order) $order['was_updated'] = false;
-        return $order;
+        return $run();
     }
 
     /**
@@ -363,6 +488,11 @@ class MerchandiseOrder
         $newStatus = $row['payment_status'] === 'paid' ? 'unpaid' : 'paid';
         $paidAt    = $newStatus === 'paid' ? date('Y-m-d H:i:s') : null;
 
+        // 入金確認（paid化）の場合、期限超過していたら遅延を確定記録（ペナルティ永続化）
+        if ($newStatus === 'paid' && class_exists('MemberPenalty')) {
+            (new MemberPenalty())->recordSnapshot('merchandise', $id);
+        }
+
         $db->execute(
             "UPDATE merchandise_orders SET payment_status = ?, paid_at = ? WHERE id = ?",
             [$newStatus, $paidAt, $id]
@@ -374,12 +504,13 @@ class MerchandiseOrder
      * 会員による振込完了報告
      * 注文が指定会員のもので未払いの場合のみ payment_submitted=1 にする。
      * すでに報告済み・支払い済み・他人の注文の場合は false。
+     * $paidAmount に申告金額（null なら注文合計を使用）を保存する。
      */
-    public static function submitPayment(int $orderId, int $memberId): bool
+    public static function submitPayment(int $orderId, int $memberId, ?int $paidAmount = null): bool
     {
         $db  = Database::getInstance();
         $row = $db->fetch(
-            "SELECT id, member_id, payment_status, payment_submitted
+            "SELECT id, member_id, payment_status, payment_submitted, total_amount
              FROM merchandise_orders WHERE id = ?",
             [$orderId]
         );
@@ -388,13 +519,82 @@ class MerchandiseOrder
         if ($row['payment_status'] !== 'unpaid') return false;
         if ((int)$row['payment_submitted'] === 1) return false;
 
+        // 金額未指定なら注文合計を使用、負数は0に丸める
+        $amount = $paidAmount !== null ? max(0, $paidAmount) : (int)$row['total_amount'];
+
+        // 振込報告（提出）時点で期限超過していたら遅延を確定記録（ペナルティ永続化）
+        if (class_exists('MemberPenalty')) {
+            (new MemberPenalty())->recordSnapshot('merchandise', $orderId);
+        }
+
         $db->execute(
             "UPDATE merchandise_orders
-             SET payment_submitted = 1, payment_submitted_at = ?
+             SET payment_submitted = 1, payment_submitted_at = ?, paid_amount = ?
              WHERE id = ?",
-            [date('Y-m-d H:i:s'), $orderId]
+            [date('Y-m-d H:i:s'), $amount, $orderId]
         );
         return true;
+    }
+
+    /**
+     * 会員ホーム表示用：支払い報告がまだの注文一覧
+     * 条件＝指定会員・未入金・未報告。
+     * 集金は販売締切後に行うため、販売期間が過ぎても未報告なら表示し続ける。
+     * ただし、商品が物販管理から削除された注文は表示しない。
+     */
+    public static function getPendingPaymentsByMemberId(int $memberId): array
+    {
+        if ($memberId <= 0) return [];
+
+        $orders = Database::getInstance()->fetchAll(
+            "SELECT * FROM merchandise_orders
+             WHERE member_id = ?
+               AND payment_status = 'unpaid'
+               AND payment_submitted = 0
+             ORDER BY created_at DESC",
+            [$memberId]
+        );
+        $result = [];
+        foreach ($orders as $o) {
+            $o['items'] = self::getItems((int)$o['id']);
+            if (self::hasExistingMerchandise($o)) {
+                $result[] = $o;
+            }
+        }
+        return $result;
+    }
+
+    /**
+     * 注文に、現在も存在する（管理から削除されていない）商品が
+     * 1つでも含まれているか。削除済み商品のみの注文は false。
+     */
+    public static function hasExistingMerchandise(array $order): bool
+    {
+        $items = $order['items'] ?? self::getItems((int)$order['id']);
+        $ids   = array_values(array_unique(array_filter(
+            array_map(fn($it) => (int)($it['merchandise_id'] ?? 0), $items)
+        )));
+        if (empty($ids)) return false;
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $count = (int)(Database::getInstance()->fetch(
+            "SELECT COUNT(*) AS c FROM merchandise WHERE id IN ({$placeholders})",
+            $ids
+        )['c'] ?? 0);
+        return $count > 0;
+    }
+
+    /**
+     * 支払いフォーム表示用に、指定会員の注文1件を取得する。
+     * 他人の注文・存在しない注文は null。
+     */
+    public static function findForMember(int $orderId, int $memberId): ?array
+    {
+        if ($orderId <= 0 || $memberId <= 0) return null;
+        $order = self::findById($orderId);
+        if (!$order) return null;
+        if ((int)$order['member_id'] !== $memberId) return null;
+        return $order;
     }
 
     public static function updateStatus(int $id, string $status): ?array
@@ -416,6 +616,59 @@ class MerchandiseOrder
             "DELETE FROM merchandise_orders WHERE id = ?",
             [$id]
         ) > 0;
+    }
+
+    /**
+     * 商品価格の変更を、その商品を含む全注文に反映する。
+     * 該当明細の unit_price / subtotal を新価格で再計算し、
+     * 影響を受けた注文の total_amount を再計算する。
+     * @return int 金額が変わった注文の件数
+     */
+    public static function repriceByMerchandise(int $merchandiseId, int $newPrice): int
+    {
+        if ($merchandiseId <= 0) return 0;
+        $db = Database::getInstance();
+
+        // 対象商品を含む注文IDを先に把握
+        $orderIds = array_map(
+            fn($r) => (int)$r['order_id'],
+            $db->fetchAll(
+                "SELECT DISTINCT order_id FROM merchandise_order_items WHERE merchandise_id = ?",
+                [$merchandiseId]
+            )
+        );
+        if (empty($orderIds)) return 0;
+
+        $db->beginTransaction();
+        try {
+            // 明細の単価・小計を新価格で更新
+            $db->execute(
+                "UPDATE merchandise_order_items
+                 SET unit_price = ?, subtotal = ? * quantity
+                 WHERE merchandise_id = ?",
+                [$newPrice, $newPrice, $merchandiseId]
+            );
+
+            // 影響を受けた注文の合計を再計算
+            $changed = 0;
+            foreach ($orderIds as $oid) {
+                $sum = (int)($db->fetch(
+                    "SELECT COALESCE(SUM(subtotal), 0) AS total FROM merchandise_order_items WHERE order_id = ?",
+                    [$oid]
+                )['total'] ?? 0);
+                $affected = $db->execute(
+                    "UPDATE merchandise_orders SET total_amount = ? WHERE id = ? AND total_amount <> ?",
+                    [$sum, $oid, $sum]
+                );
+                if ($affected > 0) $changed++;
+            }
+
+            $db->commit();
+            return $changed;
+        } catch (Exception $e) {
+            $db->rollback();
+            throw $e;
+        }
     }
 
     /**

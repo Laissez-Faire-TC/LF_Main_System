@@ -110,7 +110,6 @@
                                 <th>日付</th>
                                 <th>タイトル</th>
                                 <th>アンカーID</th>
-                                <th>順序</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -120,7 +119,6 @@
                                 <td><?= htmlspecialchars($n['news_date']) ?></td>
                                 <td><?= htmlspecialchars($n['title']) ?></td>
                                 <td><code><?= htmlspecialchars($n['anchor_id'] ?? '') ?></code></td>
-                                <td><?= (int)$n['sort_order'] ?></td>
                                 <td>
                                     <button class="btn btn-sm btn-outline-primary me-1" onclick="openNewsModal(<?= $n['id'] ?>)">編集</button>
                                     <button class="btn btn-sm btn-outline-danger" onclick="deleteNews(<?= $n['id'] ?>)">削除</button>
@@ -159,6 +157,11 @@
                         </div>
                         <div class="card-body">
                             <input type="hidden" id="scheduleId">
+
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">月の表示</label>
+                                <input type="text" class="form-control" id="scheduleMonthLabel" placeholder="例：4月">
+                            </div>
 
                             <div class="mb-3">
                                 <label class="form-label fw-bold">タイトル</label>
@@ -269,10 +272,6 @@
                         </div>
                         <div id="newsUploadStatus" class="mt-1 small"></div>
                         <img id="newsImagePreview" class="news-img-preview" src="" alt="プレビュー">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">表示順</label>
-                        <input type="number" class="form-control" id="newsSortOrder" value="0">
                     </div>
                 </div>
             </div>
@@ -418,7 +417,6 @@ function openNewsModal(id) {
         document.getElementById('newsDesc').value = '';
         document.getElementById('newsImage').value = '';
         document.getElementById('newsAnchor').value = '';
-        document.getElementById('newsSortOrder').value = '0';
         updateNewsImagePreview('');
     } else {
         const item = _allNews.find(n => n.id == id);
@@ -430,7 +428,6 @@ function openNewsModal(id) {
         document.getElementById('newsDesc').value = item.description || '';
         document.getElementById('newsImage').value = item.image_path || '';
         document.getElementById('newsAnchor').value = item.anchor_id || '';
-        document.getElementById('newsSortOrder').value = item.sort_order;
         updateNewsImagePreview(item.image_path || '');
     }
     modal.show();
@@ -448,7 +445,6 @@ async function saveNews() {
         description:   document.getElementById('newsDesc').value,
         image_path:    document.getElementById('newsImage').value || null,
         anchor_id:     document.getElementById('newsAnchor').value || null,
-        sort_order:    parseInt(document.getElementById('newsSortOrder').value) || 0,
     };
 
     try {
@@ -499,6 +495,7 @@ function selectScheduleMonth(id, btnEl) {
     const s = _scheduleData[id];
     document.getElementById('scheduleId').value = id;
     document.getElementById('scheduleEditorTitle').textContent = s.month_label + ' - ' + s.month_en;
+    document.getElementById('scheduleMonthLabel').value = s.month_label || '';
     document.getElementById('scheduleTitle').value = s.title;
     document.getElementById('scheduleType').value = s.type || 'normal';
 
@@ -611,6 +608,7 @@ async function saveSchedule() {
 
     try {
         const d = await apiPut(`/api/hp/schedule/${id}`, {
+            month_label: document.getElementById('scheduleMonthLabel').value,
             title:      document.getElementById('scheduleTitle').value,
             text_html:  quillText.root.innerHTML,
             extra_html: quillExtra.root.innerHTML,
@@ -620,7 +618,12 @@ async function saveSchedule() {
 
         if (d.success) {
             const btn = document.querySelector(`#scheduleList button[data-id="${id}"]`);
-            if (btn) btn.querySelector('small').textContent = document.getElementById('scheduleTitle').value;
+            if (btn) {
+                btn.querySelector('small').textContent = document.getElementById('scheduleTitle').value;
+                const lbl = btn.querySelector('.fw-bold');
+                if (lbl) lbl.textContent = document.getElementById('scheduleMonthLabel').value;
+            }
+            _scheduleData[id].month_label = document.getElementById('scheduleMonthLabel').value;
             _scheduleData[id].title     = document.getElementById('scheduleTitle').value;
             _scheduleData[id].text_html = quillText.root.innerHTML;
             _scheduleData[id].extra_html= quillExtra.root.innerHTML;

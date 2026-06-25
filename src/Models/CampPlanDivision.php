@@ -141,20 +141,42 @@ class CampPlanDivision
         $existingIds = array_map(fn($r) => (int)$r['participant_id'], $existing);
         $newIds = array_map('intval', $participantIds);
 
-        // 追加
-        foreach (array_diff($newIds, $existingIds) as $pid) {
-            $this->db->insert(
-                "INSERT IGNORE INTO camp_plan_division_members (division_id, participant_id) VALUES (?, ?)",
-                [$divisionId, $pid]
-            );
+        $toAdd    = array_values(array_diff($newIds, $existingIds));
+        $toRemove = array_values(array_diff($existingIds, $newIds));
+
+        $run = function () use ($divisionId, $toAdd, $toRemove) {
+            foreach ($toAdd as $pid) {
+                $this->db->insert(
+                    "INSERT IGNORE INTO camp_plan_division_members (division_id, participant_id) VALUES (?, ?)",
+                    [$divisionId, $pid]
+                );
+            }
+            foreach ($toRemove as $pid) {
+                $this->db->execute(
+                    "DELETE FROM camp_plan_division_members WHERE division_id = ? AND participant_id = ?",
+                    [$divisionId, $pid]
+                );
+            }
+        };
+
+        // 変化が無ければ記録しない
+        if (!$toAdd && !$toRemove) { $run(); return; }
+
+        if (class_exists('AuditLogger')) {
+            $changes = [];
+            if ($toAdd)    $changes['追加人数'] = count($toAdd) . '名';
+            if ($toRemove) $changes['削除人数'] = count($toRemove) . '名';
+            AuditLogger::group([
+                'feature'      => 'camps',
+                'method'       => 'PUT',
+                'target_table' => 'camp_plan_divisions',
+                'target_id'    => $divisionId,
+                'action_label' => '企画の参加者を更新',
+                'changes'      => $changes,
+            ], $run);
+            return;
         }
-        // 削除
-        foreach (array_diff($existingIds, $newIds) as $pid) {
-            $this->db->execute(
-                "DELETE FROM camp_plan_division_members WHERE division_id = ? AND participant_id = ?",
-                [$divisionId, $pid]
-            );
-        }
+        $run();
     }
 
     /**
@@ -163,14 +185,30 @@ class CampPlanDivision
      */
     public function saveTeamAssignments(int $divisionId, array $assignments): void
     {
-        foreach ($assignments as $memberId => $teamNo) {
-            $team = ($teamNo === null || $teamNo === '') ? null : (int)$teamNo;
-            $this->db->execute(
-                "UPDATE camp_plan_division_members SET team_no = ?, updated_at = NOW()
-                 WHERE id = ? AND division_id = ?",
-                [$team, (int)$memberId, $divisionId]
-            );
+        // 班割りの一括保存。多数のUPDATEを「班割りを更新」の1行にまとめる。
+        $run = function () use ($divisionId, $assignments) {
+            foreach ($assignments as $memberId => $teamNo) {
+                $team = ($teamNo === null || $teamNo === '') ? null : (int)$teamNo;
+                $this->db->execute(
+                    "UPDATE camp_plan_division_members SET team_no = ?, updated_at = NOW()
+                     WHERE id = ? AND division_id = ?",
+                    [$team, (int)$memberId, $divisionId]
+                );
+            }
+        };
+
+        if (class_exists('AuditLogger')) {
+            AuditLogger::group([
+                'feature'      => 'camps',
+                'method'       => 'PUT',
+                'target_table' => 'camp_plan_divisions',
+                'target_id'    => $divisionId,
+                'action_label' => '企画の班割りを更新',
+                'changes'      => ['対象人数' => count($assignments) . '名'],
+            ], $run);
+            return;
         }
+        $run();
     }
 
     // ── 制約 ──

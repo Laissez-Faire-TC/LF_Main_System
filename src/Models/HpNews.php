@@ -14,7 +14,7 @@ class HpNews
     public function all(): array
     {
         return $this->db->fetchAll(
-            'SELECT * FROM hp_news ORDER BY sort_order ASC, id DESC'
+            'SELECT * FROM hp_news ORDER BY news_date DESC, id DESC'
         );
     }
 
@@ -26,7 +26,7 @@ class HpNews
     public function create(array $data): int
     {
         return $this->db->insert(
-            'INSERT INTO hp_news (news_date, title, description, image_path, anchor_id, is_quick_news, sort_order) VALUES (?,?,?,?,?,?,?)',
+            'INSERT INTO hp_news (news_date, title, description, image_path, anchor_id, is_quick_news) VALUES (?,?,?,?,?,?)',
             [
                 $data['news_date']    ?? '',
                 $data['title']        ?? '',
@@ -34,14 +34,13 @@ class HpNews
                 $data['image_path']   ?? null,
                 $data['anchor_id']    ?? null,
                 isset($data['is_quick_news']) ? (int)$data['is_quick_news'] : 0,
-                isset($data['sort_order'])    ? (int)$data['sort_order']    : 0,
             ]
         );
     }
 
     public function update(int $id, array $data): void
     {
-        $allowed = ['news_date', 'title', 'description', 'image_path', 'anchor_id', 'is_quick_news', 'sort_order'];
+        $allowed = ['news_date', 'title', 'description', 'image_path', 'anchor_id', 'is_quick_news'];
         $filtered = array_intersect_key($data, array_flip($allowed));
         if (!empty($filtered)) {
             $this->db->execute(

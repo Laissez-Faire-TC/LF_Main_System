@@ -123,7 +123,10 @@ async function loadHpContent() {
         }
 
         // スケジュールデータを保存（openArticle で使用）
-        scheduleData = schedule;
+        scheduleData = schedule || {};
+
+        // スケジュールカード（月タイトル・概要）を DB の値で再描画
+        renderScheduleCards(scheduleData);
 
     } catch (e) {
         console.warn('HP content load failed, using static fallback.', e);
@@ -137,6 +140,23 @@ function escHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+function renderScheduleCards(schedule) {
+    const grid = document.querySelector('.schedule-grid');
+    if (!grid) return;
+
+    // allAsMap() は sort_order 順の連想配列。順序を保って配列化
+    const items = Object.entries(schedule || {});
+    if (items.length === 0) return; // データが無ければ静的HTMLを温存
+
+    grid.innerHTML = items.map(([key, data], i) => `
+        <div class="schedule-card${i === 0 ? ' selected' : ''}"
+             data-schedule="${escHtml(key)}"
+             onclick="openArticle('${escHtml(key)}')">
+            <h4>${escHtml(data.month_label || '')}</h4>
+            <p>${escHtml(data.title || '')}</p>
+        </div>`).join('');
 }
 
 function renderNewsCards(newsItems) {

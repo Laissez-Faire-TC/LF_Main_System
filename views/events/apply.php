@@ -12,6 +12,23 @@
 
     <div class="card shadow-sm">
         <div class="card-body p-4">
+            <?php $oauthReturn = '?return=' . urlencode("/apply/event/{$token}/confirm"); ?>
+            <?php if (!empty($googleEnabled) || !empty($lineEnabled)): ?>
+            <div class="d-grid gap-2 mb-3">
+                <?php if (!empty($googleEnabled)): ?>
+                <a href="/member/oauth/google/start<?= $oauthReturn ?>" class="btn btn-outline-dark btn-lg d-flex align-items-center justify-content-center gap-2">
+                    <i class="bi bi-google"></i> Googleでログイン
+                </a>
+                <?php endif; ?>
+                <?php if (!empty($lineEnabled)): ?>
+                <a href="/member/oauth/line/start<?= $oauthReturn ?>" class="btn btn-lg d-flex align-items-center justify-content-center gap-2" style="background-color:#06C755;color:#fff;">
+                    <i class="bi bi-chat-fill"></i> LINEでログイン
+                </a>
+                <?php endif; ?>
+            </div>
+            <div class="text-center text-muted small mb-3">または学籍番号でログイン</div>
+            <?php endif; ?>
+
             <div class="mb-3">
                 <label class="form-label fw-semibold">学籍番号</label>
                 <input type="text" class="form-control form-control-lg" id="studentIdInput"
@@ -28,6 +45,15 @@
             </button>
         </div>
     </div>
+
+    <?php if (!empty($allowGuest)): ?>
+    <div class="text-center mt-4">
+        <div class="text-muted small mb-2">会員番号をお持ちでない方（新歓・OB交流会の参加者など）</div>
+        <a href="/apply/event/<?= htmlspecialchars($token) ?>/guest" class="btn btn-outline-secondary">
+            会員以外の方の申し込みはこちら
+        </a>
+    </div>
+    <?php endif; ?>
 </div>
 
 <script>

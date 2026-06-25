@@ -60,6 +60,19 @@ $router->get('/api/auth/check', 'AuthController@check');
 $router->get('/admin/oauth/{provider}/start', 'AdminPortalController@oauthStart');
 $router->get('/admin/oauth/{provider}/callback', 'AdminPortalController@oauthCallback');
 
+// 幹部活動ログ（Admin限定）
+$router->get('/admin-activity-logs', 'AdminActivityLogController@indexPage');
+$router->get('/api/admin-activity-logs', 'AdminActivityLogController@index');
+
+// 会員ペナルティ点（Admin限定）— 入金期限の遅れを集計・手動調整
+$router->get('/member-penalties', 'MemberPenaltyController@indexPage');
+$router->post('/api/member-penalties/{id}/adjust', 'MemberPenaltyController@adjust');
+$router->get('/api/member-penalties/{id}', 'MemberPenaltyController@detail');
+
+// 幹部ログイン履歴・セッション監視（Admin限定）
+$router->get('/admin-sessions', 'AdminSessionController@indexPage');
+$router->get('/api/admin-sessions', 'AdminSessionController@index');
+
 // 幹部・権限管理（Admin限定）
 $router->get('/admin-users', 'AdminUserController@indexPage');
 $router->get('/api/admin-users', 'AdminUserController@index');
@@ -145,6 +158,18 @@ $router->post('/api/events/{id}/expenses', 'EventController@storeExpense');
 $router->get('/api/events/{id}/calculate', 'EventController@calculate');
 $router->post('/api/event-applications/{id}/cancel', 'EventController@cancelApplication');
 
+// ゲスト（非会員）フォーム項目・申込管理API
+$router->get('/api/events/{id}/guest-fields', 'EventController@getGuestFields');
+$router->post('/api/events/{id}/guest-fields', 'EventController@storeGuestField');
+$router->post('/api/events/{id}/guest-fields/template', 'EventController@applyGuestFieldTemplate');
+$router->post('/api/events/{id}/guest-fields/reorder', 'EventController@reorderGuestFields');
+$router->put('/api/event-guest-fields/{fid}', 'EventController@updateGuestField');
+$router->delete('/api/event-guest-fields/{fid}', 'EventController@deleteGuestField');
+$router->post('/api/event-guest-applications/{id}/cancel', 'EventController@cancelGuestApplication');
+$router->post('/api/event-guest-applications/{id}/confirm-resubmit', 'EventController@confirmGuestResubmit');
+$router->put('/api/event-applications/{id}/answers', 'EventController@updateMemberAnswers');
+$router->put('/api/event-guest-applications/{id}/answers', 'EventController@updateGuestAnswers');
+
 // 班決め（グループ分け）API
 $router->get('/api/events/{id}/teams', 'EventController@getTeams');
 $router->post('/api/events/{id}/teams', 'EventController@saveTeams');
@@ -162,6 +187,11 @@ $router->delete('/api/events/{id}/token', 'EventController@deleteToken');
 // 企画公開申込ページ（固定パスを先に登録）
 $router->get('/apply/event/{token}/confirm', 'EventApplicationController@confirm');
 $router->get('/apply/event/{token}/complete', 'EventApplicationController@complete');
+$router->get('/apply/event/{token}/guest', 'EventApplicationController@guestForm');
+$router->post('/api/apply/event/{token}/guest/lookup', 'EventApplicationController@guestLookup');
+$router->post('/api/apply/event/{token}/guest/update', 'EventApplicationController@guestUpdate');
+$router->post('/api/apply/event/{token}/guest/cancel', 'EventApplicationController@guestCancel');
+$router->post('/api/apply/event/{token}/guest', 'EventApplicationController@guestApply');
 $router->post('/api/apply/event/{token}', 'EventApplicationController@apply');
 $router->get('/apply/event/{token}', 'EventApplicationController@form');
 
@@ -235,6 +265,7 @@ $router->get('/member/oauth/{provider}/callback', 'MemberPortalController@oauthC
 $router->post('/api/member/oauth/{provider}/unlink', 'MemberPortalController@oauthUnlink');
 
 // 会員向け企画申し込みルート
+$router->get('/api/member/events/{id}/fields', 'MemberPortalController@eventFields');
 $router->post('/api/member/events/{id}/apply', 'MemberPortalController@applyEvent');
 $router->delete('/api/member/events/{id}/apply', 'MemberPortalController@cancelEvent');
 
@@ -419,6 +450,11 @@ $router->get('/merchandise/{id}', 'MerchandiseController@detailPage');
 $router->get('/api/merchandise/{id}/export/xlsx', 'MerchandiseExportController@xlsx');
 $router->get('/api/merchandise/{id}/export/pdf',  'MerchandiseExportController@pdf');
 
+// 支払い確認タブ（全商品横断の注文検索）
+$router->get('/api/merchandise/payments', 'MerchandiseController@searchOrders');
+// 入金確認済み注文の合計金額（期間指定可）
+$router->get('/api/merchandise/paid-total', 'MerchandiseController@paidTotal');
+
 // 未マッチ注文（暫定購入者）
 $router->get('/api/merchandise/pending-orders', 'MerchandiseController@pendingOrders');
 $router->post('/api/merchandise/pending-orders/match-all', 'MerchandiseController@matchAllPending');
@@ -445,6 +481,7 @@ $router->delete('/api/merchandise/{id}', 'MerchandiseController@destroy');
 
 // 物販ショップ（会員）
 $router->get('/member/store', 'MerchandiseShopController@memberShop');
+$router->get('/member/store/orders/{id}/payment', 'MerchandiseShopController@paymentForm');
 $router->post('/api/member/store/checkout', 'MerchandiseShopController@memberCheckout');
 $router->post('/api/member/store/orders/{id}/submit-payment', 'MerchandiseShopController@submitPayment');
 

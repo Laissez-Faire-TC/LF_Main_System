@@ -35,9 +35,10 @@ class AdminUserController
         $appConfig   = require CONFIG_PATH . '/app.php';
         $appName     = $appConfig['name'];
 
-        $users       = $this->model->allWithPermissions();
-        $permDefs    = $config['permissions'] ?? [];
-        $fixedEmails = array_map('strtolower', $config['admin_emails'] ?? []);
+        $users        = $this->model->allWithPermissions();
+        $permDefs     = $config['permissions'] ?? [];
+        $fieldDefs    = $config['member_fields'] ?? [];
+        $fixedEmails  = array_map('strtolower', $config['admin_emails'] ?? []);
 
         // 各ユーザーに「固定Adminか（降格・削除不可）」フラグを付加
         foreach ($users as &$u) {
@@ -160,7 +161,10 @@ class AdminUserController
     private function filterPermissions(array $keys): array
     {
         $config  = require CONFIG_PATH . '/admin.php';
-        $allowed = array_column($config['permissions'] ?? [], 'key');
+        $allowed = array_merge(
+            array_column($config['permissions'] ?? [], 'key'),
+            array_column($config['member_fields'] ?? [], 'key')
+        );
 
         return array_values(array_filter($keys, function ($k) use ($allowed) {
             $k = trim((string)$k);

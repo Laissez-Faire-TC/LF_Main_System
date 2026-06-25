@@ -36,17 +36,35 @@ class ExpeditionTeamMember
     public static function updateOrder(array $items): void
     {
         $db = Database::getInstance();
-        foreach ($items as $item) {
-            $team_id = $item['team_id'];
-            $members = $item['members'] ?? [];
 
-            foreach ($members as $member) {
-                $db->execute(
-                    "UPDATE expedition_team_members SET team_id = ?, sort_order = ? WHERE id = ?",
-                    [$team_id, $member['sort_order'], $member['id']]
-                );
+        // ドラッグ&ドロップによる並び替え・チーム移動。多数のUPDATEに分かれるが、
+        // 個別の値は意味が薄いので「チーム分け・並び順を更新」の1行にまとめる。
+        $count = 0;
+        foreach ($items as $item) { $count += count($item['members'] ?? []); }
+
+        $run = function () use ($db, $items) {
+            foreach ($items as $item) {
+                $team_id = $item['team_id'];
+                foreach (($item['members'] ?? []) as $member) {
+                    $db->execute(
+                        "UPDATE expedition_team_members SET team_id = ?, sort_order = ? WHERE id = ?",
+                        [$team_id, $member['sort_order'], $member['id']]
+                    );
+                }
             }
+        };
+
+        if (class_exists('AuditLogger')) {
+            AuditLogger::group([
+                'feature'      => 'expeditions',
+                'method'       => 'PUT',
+                'target_table' => 'expedition_teams',
+                'action_label' => 'チーム分け・並び順を更新',
+                'changes'      => ['対象メンバー' => $count . '名'],
+            ], $run);
+            return;
         }
+        $run();
     }
 
     /**

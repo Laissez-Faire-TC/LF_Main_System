@@ -65,11 +65,27 @@ class ExpeditionCarMember
     public static function updateOrder(array $items): void
     {
         $db = Database::getInstance();
-        foreach ($items as $item) {
-            $db->execute(
-                "UPDATE expedition_car_members SET sort_order = ? WHERE id = ?",
-                [$item['sort_order'], $item['id']]
-            );
+
+        // 乗車メンバーの並び替え。多数のUPDATEを「乗車順を更新」の1行にまとめる。
+        $run = function () use ($db, $items) {
+            foreach ($items as $item) {
+                $db->execute(
+                    "UPDATE expedition_car_members SET sort_order = ? WHERE id = ?",
+                    [$item['sort_order'], $item['id']]
+                );
+            }
+        };
+
+        if (class_exists('AuditLogger')) {
+            AuditLogger::group([
+                'feature'      => 'expeditions',
+                'method'       => 'PUT',
+                'target_table' => 'expedition_cars',
+                'action_label' => '乗車順を更新',
+                'changes'      => ['対象メンバー' => count($items) . '名'],
+            ], $run);
+            return;
         }
+        $run();
     }
 }

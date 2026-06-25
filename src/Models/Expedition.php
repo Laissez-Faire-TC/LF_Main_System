@@ -100,6 +100,32 @@ class Expedition
      */
     public static function delete(int $id): bool
     {
+        // 削除前に遠征名を控える（削除後は引けないため、ログの対象名に使う）
+        $exp = self::findById($id);
+        $expName = $exp['name'] ?? '';
+
+        // 内部は関連テーブルへの多数のDELETEに分かれるが、業務的には「遠征を削除」の1操作。
+        // 異なるテーブルへのDELETEなので自動集約は効かない。group() で1行にまとめる。
+        $run = fn() => self::deleteInner($id);
+
+        if (class_exists('AuditLogger')) {
+            return (bool)AuditLogger::group([
+                'feature'      => 'expeditions',
+                'method'       => 'DELETE',
+                'target_table' => 'expeditions',
+                'target_id'    => $id,
+                'target_name'  => $expName,
+                'action_label' => '遠征を削除（関連データ含む）',
+            ], $run);
+        }
+        return $run();
+    }
+
+    /**
+     * 削除の実体（関連テーブルをトランザクション内で順次削除）
+     */
+    private static function deleteInner(int $id): bool
+    {
         $db = Database::getInstance();
         $db->beginTransaction();
 

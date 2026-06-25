@@ -70,6 +70,32 @@
 </div>
 <?php endif; ?>
 
+<?php if (!empty($pendingMerchandisePayments)): ?>
+<h6 class="text-uppercase text-muted fw-bold mb-3 small">物販 支払いフォーム</h6>
+<div class="card border-primary mb-4">
+    <div class="card-header bg-primary bg-opacity-10 border-primary">
+        <i class="bi bi-bag-check"></i> お支払いの報告をお願いします（物販）
+    </div>
+    <div class="card-body p-0">
+        <?php foreach ($pendingMerchandisePayments as $i => $po):
+            $itemNames = array_map(fn($it) => $it['merchandise_name'], $po['items'] ?? []);
+            $label     = implode('・', array_slice($itemNames, 0, 2));
+            if (count($itemNames) > 2) $label .= ' ほか';
+        ?>
+        <div class="d-flex justify-content-between align-items-center p-3 <?= $i < count($pendingMerchandisePayments) - 1 ? 'border-bottom' : '' ?>">
+            <div>
+                <h6 class="mb-1"><?= htmlspecialchars($label !== '' ? $label : ('ご注文 #' . (int)$po['id'])) ?></h6>
+                <small class="text-muted">
+                    <?= number_format((int)$po['total_amount']) ?>円
+                </small>
+            </div>
+            <a href="/member/store/orders/<?= (int)$po['id'] ?>/payment" class="btn btn-primary btn-sm">支払い報告</a>
+        </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+<?php endif; ?>
+
 <?php if (!empty($pendingFees)): ?>
 <h6 class="text-uppercase text-muted fw-bold mb-3 small">入会金振込確認</h6>
 <div class="card border-danger mb-4">
@@ -489,6 +515,7 @@ async function submitExpense(expeditionId) {
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div id="eventFieldsContainer"></div>
                 <label class="form-label">備考（任意）</label>
                 <textarea class="form-control" id="eventNoteInput" rows="3"
                           placeholder="幹事への連絡事項があれば入力してください"></textarea>
@@ -505,13 +532,61 @@ async function submitExpense(expeditionId) {
 let _applyEventId = null;
 let _applyWaitlist = false;
 
-function showApplyModal(eventId, isWaitlist) {
+function eventEsc(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function showApplyModal(eventId, isWaitlist) {
     _applyEventId = eventId;
     _applyWaitlist = isWaitlist;
     document.getElementById('applyModalTitle').textContent = isWaitlist ? 'キャンセル待ちで申し込む' : '企画申し込み';
     document.getElementById('applyModalBtn').textContent = isWaitlist ? 'キャンセル待ちに登録' : '申し込む';
     document.getElementById('eventNoteInput').value = '';
+    const fieldsWrap = document.getElementById('eventFieldsContainer');
+    fieldsWrap.innerHTML = '';
     new bootstrap.Modal(document.getElementById('applyModal')).show();
+
+    // 会員向けカスタム質問項目を取得して描画
+    try {
+        const res  = await fetch(`/api/member/events/${eventId}/fields`);
+        const data = await res.json();
+        const fields = data.data?.fields || [];
+        fieldsWrap.innerHTML = fields.map(f => {
+            const fid = f.id;
+            const required = parseInt(f.is_required) === 1;
+            const opts = Array.isArray(f.options) ? f.options : [];
+            const reqMark = required ? ' <span class="text-danger">*</span>' : '';
+            const descHtml = f.description
+                ? `<div class="form-text mt-0 mb-1" style="white-space:pre-wrap;">${eventEsc(f.description)}</div>` : '';
+            let input;
+            if (f.type === 'textarea') {
+                input = `<textarea class="form-control event-field" data-fid="${fid}" rows="2"></textarea>`;
+            } else if (f.type === 'select') {
+                input = `<select class="form-select event-field" data-fid="${fid}"><option value="">選択してください</option>`
+                      + opts.map(o => `<option value="${eventEsc(o)}">${eventEsc(o)}</option>`).join('') + `</select>`;
+            } else if (f.type === 'radio') {
+                input = '<div>' + opts.map((o, i) =>
+                    `<div class="form-check"><input class="form-check-input event-field" type="radio" name="ef_${fid}" data-fid="${fid}" id="ef_${fid}_${i}" value="${eventEsc(o)}">`
+                    + `<label class="form-check-label" for="ef_${fid}_${i}">${eventEsc(o)}</label></div>`).join('') + '</div>';
+            } else {
+                input = `<input type="text" class="form-control event-field" data-fid="${fid}" maxlength="255">`;
+            }
+            return `<div class="mb-3"><label class="form-label fw-semibold">${eventEsc(f.label)}${reqMark}</label>${descHtml}${input}</div>`;
+        }).join('');
+    } catch (e) { /* 取得失敗時は備考のみで申込可能 */ }
+}
+
+function collectEventFieldValues() {
+    const values = {};
+    document.querySelectorAll('#eventFieldsContainer .event-field').forEach(el => {
+        const fid = el.dataset.fid;
+        if (el.type === 'radio') {
+            if (el.checked) values[fid] = el.value;
+        } else {
+            values[fid] = el.value.trim();
+        }
+    });
+    return values;
 }
 
 async function submitApplyModal() {
@@ -522,7 +597,7 @@ async function submitApplyModal() {
         const res  = await fetch(`/api/member/events/${_applyEventId}/apply`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ note: note || null }),
+            body: JSON.stringify({ note: note || null, values: collectEventFieldValues() }),
         });
         const data = await res.json();
         if (data.success) {
